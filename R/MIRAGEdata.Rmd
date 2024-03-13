@@ -18,6 +18,8 @@ library(tidyr) # facilitates tidy data transformation.
 library(purrr) # enhances programming capabilities
 library(janitor) # to clean column names
 library(ggplot2) # for plots
+library(lme4) # for mixed models
+library(emmeans) # for p-values and confidence intervals
 ```
 
 # Quantification limits
@@ -424,4 +426,61 @@ for (i in seq_len(nrow(unique_combinations))) {
 cat("All plots have been saved to", output_dir, "\n")
 ```
 
-# Log transform
+# Mixed models
+
+Insulin sensitivity. Original data was analyzed by one-way ANOVA. So this would be to double check results
+
+```{r}
+# Convert from wide to long format and select specific columns
+mirage_data_long <- mirage_data %>%
+  pivot_longer(cols = c("gdr_pre_rd_ss2_mg_kg_ffm_min", "gdr_post_rd_ss2_mg_kg_ffm_min"),
+               names_to = "time",
+               values_to = "glucose_uptake") %>%
+  mutate(time = recode(time,
+                       "gdr_pre_rd_ss2_mg_kg_ffm_min" = "Pre",
+                       "gdr_post_rd_ss2_mg_kg_ffm_min" = "Post")) %>%
+  select(id, time, glucose_uptake, group)
+
+# Set reference groups before analysis
+mirage_data_long$group <- factor(mirage_data_long$group, levels = c("HED", "DIWL", "WLEX"))
+mirage_data_long$time <- factor(mirage_data_long$time, levels = c("Pre", "Post"))
+
+
+
+
+
+# Simple boxplot
+boxplot(glucose_uptake ~ time * group, data = mirage_data_long)
+
+# 'insulin_sensitivity' is the dependent variable
+# Fixed effects: time, group, and their interaction (time:group)
+# Random effects: Intercept grouped by 'id' to account for repeated measures within subjects
+model.intervention <-  lmer(glucose_uptake ~ time * group +
+                   (1 | id),
+              data = mirage_data_long)
+
+model.intervention
+
+# Within group comparisons
+emm_interaction <- emmeans(model.intervention, specs = pairwise ~ time | group)
+pairwise <- pairs(emm_interaction)
+conf_intervals <- confint(emm_interaction, level = 0.95) # For 95% confidence intervals
+print(conf_intervals)
+summary(pairwise)
+
+
+# Between group comparisons
+emm_betweengroup <- emmeans(model.intervention, specs = ~ time * group)
+contrast_emm <- contrast(emm_betweengroup, interaction = "pairwise")
+conf_intervals <- confint(contrast_emm, level = 0.95) # For 95% confidence intervals
+print(conf_intervals)
+summary(contrast_emm)
+
+
+
+# Make function of the above with correction list () as an input.
+
+# Spearman analysis function for lipidomics. Correction list.
+
+# Make heatmap or so based on correlations.
+```
