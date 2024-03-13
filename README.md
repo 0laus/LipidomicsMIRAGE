@@ -1,9 +1,6 @@
 TODO: Add more to the title of your project here
 
 # LipidomicsMIRAGE:
-
-TODO: Give a brief description of what your project is about
-
 This project aims to do lipidomics analysis and analyse correlation from other data outcomes from the MIRAGE study.
 
 # Brief description of folder and file contents

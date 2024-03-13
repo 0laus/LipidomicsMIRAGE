@@ -1,0 +1,427 @@
+---
+title: "MIRAGEdata"
+purpose: To load, merge, explore, and plot lipidomics data and look for correlations with cardiometabolic endpoints the MIRAGE dataset.
+output:
+html_notebook: default
+author: Ole Emil Andersen
+date created: March 2024
+editor_options: 
+  chunk_output_type: console
+---
+
+# Packages
+
+```{r}
+library(readxl) # reads Excel files
+library(dplyr) # to manipulate data
+library(tidyr) # facilitates tidy data transformation.
+library(purrr) # enhances programming capabilities
+library(janitor) # to clean column names
+library(ggplot2) # for plots
+```
+
+# Quantification limits
+
+Values are inserted from the lipidomics Excel file, "2022Mar Goodpaster Results.xlsx"
+
+```{r}
+detection_limits <- data.frame(
+  lipidClass = c("SPH", "AC", "SPM", "PG", "LPG", "PI", "LPI", "PS", "LPS", "PA", "PE", "LPE", "PC", "LPC", "1,3-DAG", "1,2-DAG", "Cer", "dHCer", "GluCer", "LacCer", "GalCer", "TAG"),
+  LLOQ = c(0.08, 0.16, 1.2, 0.6, 0.03, 2.5, 1, 2.5, 0.05, 0.1, 2.5, 1, 7, 3, 0.34, 0.68, 0.25, 0.05, 0.1, 0.2, 0.1, 10),
+  ULOQ = c(320, 640, 4800, 2400, 100, 10000, 4000, 10000, 200, 400, 10000, 4000, 28000, 12000, 1360, 2720, 1000, 200, 400, 800, 400, 40000)
+)
+```
+
+# Load data
+
+**Load lipidomics** data into long format and clean the data by replacing \<0 with 0 and N/A with NA.
+
+```{r}
+# Define the path to the Excel file
+file_path <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/data-raw/2022Mar Goodpaster Results With Name Spaces.xlsx"
+
+# List sheet names to load from excel file
+sheet_names <- c("SPM SPH AC", "PG", "PI", "PS", "PA", "PE", "PC", "1,3-DAGs", "1,2-DAGs", "Cer dHCer GluCer LacCer GalCer", "TAG")
+
+load_sheets_in_long_format <- function(file_path, sheet_names) {
+  map_df(sheet_names, ~ {
+    # Read the measurement names from the first row
+    measurement_names <- read_excel(file_path, sheet = .x, n_max = 1) %>%
+      colnames()
+
+    # Read the data, skipping the first two rows
+    data <- read_excel(file_path, sheet = .x, skip = 2, col_names = FALSE)
+
+    # Limit the data to match the number of columns in the column names
+    num_cols_in_names <- length(measurement_names)
+    data_trimmed <- data[, 1:num_cols_in_names]
+
+    # Assign column names to the data
+    colnames(data_trimmed) <- c("Sample Name", measurement_names[-1])
+
+    # Adjusting the replacement for "< 0" with 0 (as numeric) and "N/A" with NA
+    data_cleaned <- data_trimmed %>%
+      mutate(across(everything(), ~ case_when(
+        .x == "< 0" ~ "0", # Replace "< 0" with "0"
+        .x == "N/A" ~ NA_character_, # Replace "N/A" with NA
+        TRUE ~ as.character(.x) # Keep other values as-is, converting to character to ensure type consistency
+      ))) %>%
+      type.convert(as.is = TRUE) # Convert back to original type where possible
+
+    # Rename "Sample Name" to "sampleNumber"
+    colnames(data_cleaned)[1] <- "sampleNumber"
+
+    # Transform to long format
+    data_long <- pivot_longer(data_cleaned, -sampleNumber, names_to = "measurement", values_to = "pmol")
+
+    # Split the measurement into class and structure based on space
+    data_long <- data_long %>%
+      separate(measurement, into = c("lipidComposition", "lipidClass"), sep = " ", extra = "merge")
+
+    return(data_long)
+  }, .id = "sheet")
+}
+
+# Load all specified sheets into a single data frame in long format
+lipidomicsDF <- load_sheets_in_long_format(file_path, sheet_names)
+
+# Remove sheet column
+lipidomicsDF <- select(lipidomicsDF, -sheet)
+```
+
+**Load identifiers and sample weights** and merge with the data frame and split the pid into pre/post and id
+
+```{r}
+# path to file
+filePathIdentifiers <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/data-raw/Lipidomics Key and Weights Goodpaster KZB_identifiable.xlsx"
+
+# load file
+identifiersDF <- read_excel(filePathIdentifiers)
+
+# clean names to make easier to work with
+identifiersDF <- clean_names(identifiersDF)
+
+# Make tube_id character
+identifiersDF$tube_id <- as.character(identifiersDF$tube_id)
+
+# Combine identifiers with data
+lipidomicsDF <- left_join(lipidomicsDF, identifiersDF, by = c("sampleNumber" = "tube_id"))
+
+# Split pid column into an id and a time column
+lipidomicsDF <- separate(lipidomicsDF, pid, into = c("id", "time"), sep = " ", extra = "merge")
+
+# Make time, lipidClass, id and group categorical variables
+lipidomicsDF$time <- factor(lipidomicsDF$time, levels = c("Pre", "Post")) # sort by pre and post
+lipidomicsDF$lipidClass <- factor(lipidomicsDF$lipidClass)
+lipidomicsDF$id <- factor(lipidomicsDF$id)
+lipidomicsDF$group <- factor(lipidomicsDF$group)
+lipidomicsDF$lipidComposition <- factor(lipidomicsDF$lipidComposition)
+```
+
+**Load other endpoints** from "FINAL MIRAGE DATASET.xlsx".
+
+!!! DUPLICATE IDS: "MG023" and "MG019" both are duplicates that appear with same group as in id from Pittsburg and TRI. Assumption: All samples are from TRI if not specified otherwise. Therefore, the Excel file "FINAL MIRAGE DATASET.xlsx", sheet "Not Imputed-Clean" was changed to make the merge work. All changes are marked with red text.
+
+```{r}
+# path to file
+file_path_endpoints <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/data-raw/FINAL MIRAGE DATASET.xlsx"
+
+# load file
+mirage_data <- read_excel(file_path_endpoints, sheet = "Not Imputed-Clean")
+
+# clean names
+mirage_data <- clean_names(mirage_data)
+
+# separate pid into id and site
+mirage_data <- separate(mirage_data, pid, into = c("id", "site"), sep = "-", extra = "merge")
+
+# Remove redundant columns
+mirage_data <- select(mirage_data, -study_center)
+
+# This step not needed? Merge data with lipidomics data
+# lipidomicsDF <- left_join(lipidomicsDF, mirage_data, by = 'id')
+```
+
+# Within thresholds
+
+Make column to denote if measurement is within (0), below LLOQ (1) or above ULOQ (2)
+
+```{r}
+# Initialize the "within_threshold" column in lipidomicsDF
+lipidomicsDF$within_threshold <- NA
+
+# Iterate over lipidomicsDF and assign "within_threshold" values
+for (i in 1:nrow(lipidomicsDF)) {
+  # Extract the current row's lipidClass
+  current_lipidClass <- lipidomicsDF$lipidClass[i]
+
+  # Lookup the corresponding LLOQ and ULOQ values in detection_limits
+  current_LLOQ <- detection_limits$LLOQ[detection_limits$lipidClass == current_lipidClass]
+  current_ULOQ <- detection_limits$ULOQ[detection_limits$lipidClass == current_lipidClass]
+
+  # Check for NA values in pmol or in the LLOQ/ULOQ lookup
+  if (is.na(lipidomicsDF$pmol[i]) | length(current_LLOQ) == 0 | length(current_ULOQ) == 0) {
+    lipidomicsDF$within_threshold[i] <- NA # Assign NA if there's an NA value in pmol or LLOQ/ULOQ cannot be found
+  } else if (lipidomicsDF$pmol[i] < current_LLOQ) {
+    lipidomicsDF$within_threshold[i] <- 1 # Below LLOQ
+  } else if (lipidomicsDF$pmol[i] > current_ULOQ) {
+    lipidomicsDF$within_threshold[i] <- 2 # Above ULOQ
+  } else {
+    lipidomicsDF$within_threshold[i] <- 0 # Within the threshold
+  }
+}
+```
+
+# Normalization and transformation
+
+Weight normalization
+
+```{r}
+lipidomicsDF$pmol_mg <- lipidomicsDF$pmol / lipidomicsDF$equiv_weight_extracted
+```
+
+Log transform the weight normalized lipidomics data. 1 is added to all values to avoid zores.
+
+```{r}
+# Adding a small constant (e.g., 1) to avoid log(0)
+lipidomicsDF <- lipidomicsDF %>%
+  mutate(pmol_mg_log = log(pmol_mg + 1))
+```
+
+# Sort data
+
+Sort data for future plotting
+
+```{r}
+# Sort the dataframe by 'id' and 'time'
+lipidomicsDF <- lipidomicsDF %>%
+  arrange(id, time)
+```
+
+# Scatter plot
+
+Scatter plots with insulin sensitivity as colormap. Datapoints above ULOQ and below LLOQ are marked with triangles for.
+
+```{r}
+# Create a named vector mapping IDs to continuous values for coloring
+color_map <- setNames(mirage_data$gdr_pre_rd_ss2_mg_kg_ffm_min, mirage_data$id)
+
+plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, detection_limits) {
+  filtered_data <- filter(lipidomicsDF, lipidClass == lipid_class & lipidComposition == lipid_composition & !is.na(time))
+
+  # Find the min and max of the y-axis data
+  y_min <- min(filtered_data$pmol_mg, na.rm = TRUE)
+  y_max <- max(filtered_data$pmol_mg, na.rm = TRUE)
+
+  # Optionally, you can add a buffer to these limits
+  buffer <- (y_max - y_min) * 0.05 # 5% buffer, adjust as necessary
+  y_min <- y_min - buffer
+  y_max <- y_max + buffer
+
+  # Prepare the plot with the existing setup
+  plot <- ggplot(
+    filtered_data,
+    aes(
+      x = factor(interaction(group, time, sep = " "),
+        levels = c("HED Pre", "HED Post", "DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post")
+      ),
+      y = pmol_mg, group = interaction(id, group)
+    )
+  ) +
+    geom_line(aes(group = interaction(id, group)), color = "darkgrey", position = position_nudge(x = 0.1)) + # Nudge lines to the right
+    geom_point(aes(color = color_map[id]), alpha = 0.5, position = position_nudge(x = 0.1)) + # Nudge points to the right
+    geom_boxplot(aes(group = interaction(group, time)), width = 0.3, alpha = 0.2, outlier.shape = NA, position = position_dodge(width = 0.75), color = "black") +
+    geom_point(
+      data = subset(filtered_data, within_threshold == 2),
+      aes(
+        x = factor(interaction(group, time, sep = " "),
+          levels = c("HED Pre", "HED Post", "DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post")
+        ),
+        y = pmol_mg
+      ),
+      shape = 17, # Triangle up
+      color = "black",
+      alpha = 0.3, # make translucent
+      position = position_nudge(x = 0.1)
+    ) +
+    geom_point(
+      data = subset(filtered_data, within_threshold == 1),
+      aes(
+        x = factor(interaction(group, time, sep = " "),
+          levels = c("HED Pre", "HED Post", "DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post")
+        ),
+        y = pmol_mg
+      ),
+      shape = 25, # Triangle down
+      color = "black",
+      alpha = 0.3, # make translucent
+      position = position_nudge(x = 0.1)
+    ) +
+    scale_color_gradient(low = "blue", high = "red", name = "Glucose disposal rate,\n(mg/kgFFM/min)") +
+    labs(title = paste(lipid_composition, lipid_class), y = "pmol/mg", x = "") +
+    theme_minimal() +
+    theme(
+      axis.title.x = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "right",
+      legend.title.align = 0.5,
+      plot.title = element_text(hjust = 0.5),
+      legend.text = element_text(size = 6),
+      legend.title = element_text(size = 6),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank()
+    )
+
+  # Filter the detection_limits for the current lipid_class
+  limits <- detection_limits %>%
+    filter(lipidClass == lipid_class)
+
+  # Set the y-axis limits based on the data range
+  plot <- plot + coord_cartesian(ylim = c(y_min, y_max))
+
+  # Define the filename, making it OneDrive compatible
+  filename <- paste0(
+    "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/scatterplots_exploration/",
+    gsub("/", "_", gsub(":", ",", paste(lipid_class, lipid_composition, sep = " "))),
+    ".jpg"
+  )
+
+  # Save the plot as a high-resolution JPEG
+  ggsave(filename, plot = plot, device = "jpeg", width = 8, height = 6, dpi = 300)
+
+  cat("Plot saved as:", filename, "\n")
+}
+
+# Extract unique lipid classes
+unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
+
+# Loop through each lipid class
+for (lipid_class in unique_lipid_classes) {
+  # Filter for unique lipid compositions within the current lipid class
+  lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
+
+  # Loop through each lipid composition within the current lipid class
+  for (lipid_composition in lipid_compositions_in_class) {
+    # Call the plotting function for each combination of lipid_class and lipid_composition
+    plot_lipid(lipidomicsDF, lipid_composition, lipid_class, color_map, detection_limits)
+  }
+}
+```
+
+# Make QQ plots
+
+Raw, normalized lipidomics data
+
+```{r}
+output_dir <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/qq-plots/raw"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+unique_combinations <- lipidomicsDF %>%
+  distinct(lipidClass, lipidComposition) %>%
+  arrange(lipidClass, lipidComposition)
+
+groups <- c("HED", "DIWL", "WLEX")
+times <- c("Pre", "Post")
+
+for (i in seq_len(nrow(unique_combinations))) {
+  current_combination <- unique_combinations[i, ]
+
+  sanitized_lipidClass <- gsub("[/:]", "_", current_combination$lipidClass)
+  sanitized_lipidComposition <- gsub("[/:]", "_", current_combination$lipidComposition)
+  file_name <- paste(sanitized_lipidClass, sanitized_lipidComposition, "qqplots.jpeg", sep = " ")
+  file_path <- file.path(output_dir, file_name)
+
+  # Open JPEG device
+  jpeg(file_path, width = 800, height = 600)
+
+  # Setup plot layout
+  par(mfrow = c(3, 2), mar = c(4, 4, 2, 1))
+
+  for (group in groups) {
+    for (time in times) {
+      data_to_plot <- lipidomicsDF %>%
+        filter(
+          lipidClass == current_combination$lipidClass,
+          lipidComposition == current_combination$lipidComposition,
+          group == !!group,
+          time == !!time
+        )
+
+      # Plot only if there's data
+      if (nrow(data_to_plot) > 0 && !all(is.na(data_to_plot$pmol_mg))) {
+        qqnorm(data_to_plot$pmol_mg, main = paste(current_combination$lipidClass, current_combination$lipidComposition, group, time))
+        qqline(data_to_plot$pmol_mg, col = "red")
+      } else {
+        plot.new()
+        title(main = paste("No data for", current_combination$lipidClass, current_combination$lipidComposition, group, time))
+      }
+    }
+  }
+
+  # Close the plotting device
+  dev.off()
+}
+
+cat("All plots have been saved to", output_dir, "\n")
+```
+
+Log transformed lipidomics data
+
+```{r}
+output_dir <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/qq-plots/log transformed"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+unique_combinations <- lipidomicsDF %>%
+  distinct(lipidClass, lipidComposition) %>%
+  arrange(lipidClass, lipidComposition)
+
+groups <- c("HED", "DIWL", "WLEX")
+times <- c("Pre", "Post")
+
+for (i in seq_len(nrow(unique_combinations))) {
+  current_combination <- unique_combinations[i, ]
+
+  sanitized_lipidClass <- gsub("[/:]", "_", current_combination$lipidClass)
+  sanitized_lipidComposition <- gsub("[/:]", "_", current_combination$lipidComposition)
+  file_name <- paste(sanitized_lipidClass, sanitized_lipidComposition, "Log qqplots.jpeg", sep = " ")
+  file_path <- file.path(output_dir, file_name)
+
+  # Open JPEG device
+  jpeg(file_path, width = 800, height = 600)
+
+  # Setup plot layout
+  par(mfrow = c(3, 2), mar = c(4, 4, 2, 1))
+
+  for (group in groups) {
+    for (time in times) {
+      data_to_plot <- lipidomicsDF %>%
+        filter(
+          lipidClass == current_combination$lipidClass,
+          lipidComposition == current_combination$lipidComposition,
+          group == !!group,
+          time == !!time
+        )
+
+      # Plot only if there's data
+      if (nrow(data_to_plot) > 0 && !all(is.na(data_to_plot$pmol_mg))) {
+        qqnorm(data_to_plot$pmol_mg_log, main = paste(current_combination$lipidClass, current_combination$lipidComposition, group, time))
+        qqline(data_to_plot$pmol_mg_log, col = "red")
+      } else {
+        plot.new()
+        title(main = paste("No data for", current_combination$lipidClass, current_combination$lipidComposition, group, time))
+      }
+    }
+  }
+
+  # Close the plotting device
+  dev.off()
+}
+
+cat("All plots have been saved to", output_dir, "\n")
+```
+
+# Log transform
