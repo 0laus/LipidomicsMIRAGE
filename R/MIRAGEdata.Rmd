@@ -18,7 +18,9 @@ library(tidyr) # facilitates tidy data transformation.
 library(purrr) # enhances programming capabilities
 library(janitor) # to clean column names
 library(ggplot2) # for plots
+library(patchwork) # to make ggplot subplots
 library(lme4) # for mixed models
+library(lmerTest) # p-values for mixed models
 library(emmeans) # for p-values and confidence intervals
 ```
 
@@ -198,7 +200,192 @@ Sort data for future plotting
 # Sort the dataframe by 'id' and 'time'
 lipidomicsDF <- lipidomicsDF %>%
   arrange(id, time)
+
+# Find all lipidClass-lipidComposition
+unique_combinations <- lipidomicsDF %>%
+  distinct(lipidClass, lipidComposition) %>%
+  arrange(lipidClass, lipidComposition)
 ```
+
+# Mixed models
+
+Insulin sensitivity. Original data was analyzed by one-way ANOVA. So this would be to double check results
+
+mixed model for pre-post changes for every lipid composition within all lipid classes and for every lipid class.
+
+```{r}
+mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposition = NULL) {
+  # Filter dataset based on lipidclass and optionally lipidcomposition
+  if (!is.null(lipidcomposition)) {
+    data_to_model <- filter(dataset, lipidClass == lipidclass & lipidComposition == lipidcomposition)
+  } else {
+    data_to_model <- filter(dataset, lipidClass == lipidclass)
+  }
+
+  # Ensure there's enough data to proceed
+  if (sum(!is.na(data_to_model[[response_var]])) < 3) {
+    return(list(estimates = NA, pvals = NA))
+  }
+
+  # Prepare factors
+  data_to_model$group <- factor(data_to_model$group, levels = c("HED", "DIWL", "WLEX"))
+  data_to_model$time <- factor(data_to_model$time, levels = c("Pre", "Post"))
+
+  # Determine if lipidComposition can be a random effect
+  if (!is.null(lipidcomposition) || length(unique(data_to_model$lipidComposition)) <= 1) {
+    model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id)"))
+  } else {
+    model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id) + (1 | lipidComposition)"))
+  }
+
+  # Try-catch block for model fitting
+  tryCatch({
+      model <- lmer(model_formula, data = data_to_model, na.action = na.exclude)
+      model_summary <- summary(model)
+      model.pvals <- model_summary$coefficients[, "Pr(>|t|)"]
+      model.estimates <- model_summary$coefficients[, "Estimate"]
+
+      return(list(lipidClass = as.character(lipidclass), lipidComposition = as.character(lipidcomposition), estimates = model.estimates, pvals = model.pvals))
+    },
+    error = function(e) {
+      return(list(estimates = NA, pvals = NA))
+    }
+  )
+}
+
+
+# Run function for lipidClass and lipidComposition
+result.lipid.pre_post.class_comp <- pmap(
+  list(lipidClass = unique_combinations$lipidClass, lipidComposition = unique_combinations$lipidComposition),
+  ~ mixedmodel_pre_post(lipidomicsDF, "pmol_mg", ..1, ..2)
+)
+# Naming the results list elements
+names(result.lipid.pre_post.class_comp) <- paste(unique_combinations$lipidClass, unique_combinations$lipidComposition, sep = "_")
+
+
+# Run for lipidclasses
+# Find unique lipid classes
+unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
+
+# Use map to iterate over lipid classes
+result.lipid.pre_post.class <- purrr::map(unique_lipid_classes, ~ mixedmodel_pre_post(lipidomicsDF, "pmol_mg", .x))
+
+# Naming the results list
+names(result.lipid.pre_post.class) <- unique_lipid_classes
+```
+
+Sort, adjust by Benjamini-Hochberg for lipid composition within lipid class
+
+
+```{r}
+prepare_lipid_data_for_plotting <- function(result_data) {
+  # Initialize an empty list to store the extracted p-values for each test.
+  extracted_pvals <- list()
+
+  # Extract specific p-values for each test and handle cases where they might not exist.
+  for (test_name in names(result_data)) {
+    test_results <- result_data[[test_name]]$pvals
+    extracted_pvals[[test_name]] <- c(
+      timePost_groupHED = ifelse("timePost" %in% names(test_results), test_results[["timePost"]], NA),
+      timePost_groupDIWL = ifelse("timePost:groupDIWL" %in% names(test_results), test_results[["timePost:groupDIWL"]], NA),
+      timePost_groupWLEX = ifelse("timePost:groupWLEX" %in% names(test_results), test_results[["timePost:groupWLEX"]], NA),
+      groupDIWL = ifelse("groupDIWL" %in% names(test_results), test_results[["groupDIWL"]], NA),
+      groupWLEX = ifelse("groupWLEX" %in% names(test_results), test_results[["groupWLEX"]], NA)
+    )
+  }
+
+  # Convert the list into a dataframe and ensure it's properly formatted.
+  pvals_df <- do.call(rbind, lapply(extracted_pvals, function(x) as.data.frame(t(x), stringsAsFactors = FALSE)))
+  
+  # Ensure we have a properly formatted data frame
+  if (!is.data.frame(pvals_df) || ncol(pvals_df) == 0) {
+    stop("Data frame conversion failed or resulted in an empty data frame.")
+  }
+  
+  rownames(pvals_df) <- names(extracted_pvals)
+  pvals_df$Lipid <- rownames(pvals_df)
+
+  # Apply the Benjamini-Hochberg correction to adjust p-values for multiple testing.
+  correction_columns <- c("timePost_groupHED", "timePost_groupDIWL", "timePost_groupWLEX")
+  for (col in correction_columns) {
+    if (col %in% names(pvals_df)) {
+      corrected_col_name <- paste(col, "corrected", sep = "_")
+      pvals_df[[corrected_col_name]] <- p.adjust(pvals_df[[col]], method = "BH")
+    }
+  }
+
+  # Sort data if the key column exists
+  if ("timePost_groupDIWL" %in% names(pvals_df)) {
+    pvals_df <- pvals_df[order(pvals_df$timePost_groupDIWL), ]
+    pvals_df$Lipid <- factor(pvals_df$Lipid, levels = pvals_df$Lipid)
+  } else {
+    warning("Sorting column 'timePost_groupDIWL' does not exist.")
+  }
+  
+  return(pvals_df)
+}
+
+
+# Prepare data for plotting lipid composition within each lipid class
+pvals_lipid_class_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp)
+
+# Prepare data for plotting lipid classes
+pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class)
+````
+
+Make lollipop plots for both lipid classes and lipid composition data
+```{r}
+
+# Function to generate subplot for a given group
+generate_subplot <- function(group_name) {
+  # Sort data by p-values (ascending) for the current group
+  sorted_data <- pvals.lmer.lipidomics.pre_post[order(pvals.lmer.lipidomics.pre_post[[paste0("timePost_group", group_name)]]), ]
+  sorted_data$Lipid <- factor(sorted_data$Lipid, levels = sorted_data$Lipid)
+
+  # Non-corrected p-values plot
+  p1 <- ggplot(sorted_data, aes(x = Lipid, y = get(paste0("timePost_group", group_name)))) +
+    geom_segment(aes(xend = Lipid, y = 0, yend = get(paste0("timePost_group", group_name))), color = "black") +
+    coord_flip() +
+    geom_hline(yintercept = 0.05, linetype = "dotted", color = "red") +
+    labs(y = "P-value", x = "Lipid", title = paste("P-values (", group_name, " - pre vs post)", sep = "")) +
+    theme_minimal() +
+    theme(axis.text.y = element_text(angle = 0, hjust = 1, size = 5))
+
+  # Corrected p-values plot
+  p2 <- ggplot(sorted_data, aes(x = Lipid, y = get(paste0("timePost_group", group_name, "_corrected")))) +
+    geom_segment(aes(xend = Lipid, y = 0, yend = get(paste0("timePost_group", group_name, "_corrected"))), color = "black") +
+    coord_flip() +
+    geom_hline(yintercept = 0.05, linetype = "dotted", color = "red") +
+    labs(y = "P-value", x = "Lipid", title = paste("Benjamini-Hochberg corrected (", group_name, " - pre vs post)", sep = "")) +
+    theme_minimal() +
+    theme(axis.text.y = element_text(angle = 0, hjust = 1, size = 5))
+
+  # Combine and return the two plots as a subplot
+  return(p1 + p2 + plot_layout(ncol = 2))
+}
+
+# List of groups to generate subplots for
+groups <- c("HED", "DIWL", "WLEX")
+
+# Output path
+output_path <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/p-vals lipidomics pre.post"
+
+# Loop through each group and generate/save subplots
+for (group in groups) {
+  subplot <- generate_subplot(group)
+  ggsave(file.path(output_path, paste("p-vals_lipidomics_", group, "_pre_post.jpg", sep = "")),
+    plot = subplot,
+    device = "jpeg",
+    width = 16, height = 22, dpi = 300
+  )
+}
+
+```
+
+
+
+
+
 
 # Scatter plot
 
@@ -294,13 +481,13 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
   cat("Plot saved as:", filename, "\n")
 }
 
-# Extract unique lipid classes
-unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
-
 # Loop through each lipid class
 for (lipid_class in unique_lipid_classes) {
   # Filter for unique lipid compositions within the current lipid class
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
+
+  # Extract unique lipid classes
+  unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
 
   # Loop through each lipid composition within the current lipid class
   for (lipid_composition in lipid_compositions_in_class) {
@@ -312,17 +499,13 @@ for (lipid_class in unique_lipid_classes) {
 
 # Make QQ plots
 
-Raw, normalized lipidomics data
+QQ-plots for faw, normalized lipidomics data
 
 ```{r}
 output_dir <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/qq-plots/raw"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
-
-unique_combinations <- lipidomicsDF %>%
-  distinct(lipidClass, lipidComposition) %>%
-  arrange(lipidClass, lipidComposition)
 
 groups <- c("HED", "DIWL", "WLEX")
 times <- c("Pre", "Post")
@@ -369,7 +552,7 @@ for (i in seq_len(nrow(unique_combinations))) {
 cat("All plots have been saved to", output_dir, "\n")
 ```
 
-Log transformed lipidomics data
+QQ-plots for log transformed lipidomics data
 
 ```{r}
 output_dir <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/qq-plots/log transformed"
@@ -426,61 +609,12 @@ for (i in seq_len(nrow(unique_combinations))) {
 cat("All plots have been saved to", output_dir, "\n")
 ```
 
-# Mixed models
-
-Insulin sensitivity. Original data was analyzed by one-way ANOVA. So this would be to double check results
-
-```{r}
-# Convert from wide to long format and select specific columns
-mirage_data_long <- mirage_data %>%
-  pivot_longer(cols = c("gdr_pre_rd_ss2_mg_kg_ffm_min", "gdr_post_rd_ss2_mg_kg_ffm_min"),
-               names_to = "time",
-               values_to = "glucose_uptake") %>%
-  mutate(time = recode(time,
-                       "gdr_pre_rd_ss2_mg_kg_ffm_min" = "Pre",
-                       "gdr_post_rd_ss2_mg_kg_ffm_min" = "Post")) %>%
-  select(id, time, glucose_uptake, group)
-
-# Set reference groups before analysis
-mirage_data_long$group <- factor(mirage_data_long$group, levels = c("HED", "DIWL", "WLEX"))
-mirage_data_long$time <- factor(mirage_data_long$time, levels = c("Pre", "Post"))
 
 
 
 
 
-# Simple boxplot
-boxplot(glucose_uptake ~ time * group, data = mirage_data_long)
-
-# 'insulin_sensitivity' is the dependent variable
-# Fixed effects: time, group, and their interaction (time:group)
-# Random effects: Intercept grouped by 'id' to account for repeated measures within subjects
-model.intervention <-  lmer(glucose_uptake ~ time * group +
-                   (1 | id),
-              data = mirage_data_long)
-
-model.intervention
-
-# Within group comparisons
-emm_interaction <- emmeans(model.intervention, specs = pairwise ~ time | group)
-pairwise <- pairs(emm_interaction)
-conf_intervals <- confint(emm_interaction, level = 0.95) # For 95% confidence intervals
-print(conf_intervals)
-summary(pairwise)
-
-
-# Between group comparisons
-emm_betweengroup <- emmeans(model.intervention, specs = ~ time * group)
-contrast_emm <- contrast(emm_betweengroup, interaction = "pairwise")
-conf_intervals <- confint(contrast_emm, level = 0.95) # For 95% confidence intervals
-print(conf_intervals)
-summary(contrast_emm)
 
 
 
-# Make function of the above with correction list () as an input.
 
-# Spearman analysis function for lipidomics. Correction list.
-
-# Make heatmap or so based on correlations.
-```
