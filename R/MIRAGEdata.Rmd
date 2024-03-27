@@ -85,9 +85,7 @@ lipidomicsDF <- select(lipidomicsDF, -sheet)
 ```
 
 ### Identifiers, samples and PBIS
-
 **Load identifiers and sample weights** and merge with the data frame and split the pid into pre/post and id.
-
 ```{r}
 # path to file
 filePathIdentifiers <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/data-raw/Lipidomics Key and Weights Goodpaster KZB_identifiable.xlsx"
@@ -119,6 +117,44 @@ lipidomicsDF <- lipidomicsDF %>%
   filter(id != "PBIS")
 ```
 
+### Normalization and transformation
+**Weight normalization**
+```{r}
+lipidomicsDF$pmol_mg <- lipidomicsDF$pmol / lipidomicsDF$equiv_weight_extracted
+```
+**Log transform**
+Log transform the weight normalized lipidomics data. 1 is added to all values to avoid zores
+```{r}
+# Transform and add a small constant (+1) to avoid log(0)
+lipidomicsDF <- lipidomicsDF %>%
+  mutate(pmol_mg_log = log(pmol_mg + 1))
+```
+**Z-transformation**
+```{r}
+# Make column with Z-transformed data for each lipid composition within each lipid class
+lipidomicsDF <- lipidomicsDF %>% 
+  group_by(lipidClass, lipidComposition) %>% 
+  mutate(pmol_mg_znorm = scale(pmol_mg)) %>% 
+  ungroup()
+```
+
+**Sort data**
+```{r}
+# Sort the dataframe by 'id' and 'time'
+lipidomicsDF <- lipidomicsDF %>%
+  arrange(id, time)
+
+# Find all lipidClass-lipidComposition
+unique_combinations <- lipidomicsDF %>%
+  distinct(lipidClass, lipidComposition) %>%
+  arrange(lipidClass, lipidComposition)
+```
+
+**Define unique lipid classes**
+```{r}
+unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
+```
+
 ### Quantification limits
 Values are copied from the lipidomics Excel file, "2022Mar Goodpaster Results.xlsx"
 ```{r}
@@ -129,11 +165,35 @@ detection_limits <- data.frame(
 )
 ```
 
+Make column to denote if measurement is within (0), below LLOQ (1) or above ULOQ (2)
+```{r}
+# Initialize the "within_threshold" column in lipidomicsDF
+lipidomicsDF$within_threshold <- NA
 
+# Iterate over lipidomicsDF and assign "within_threshold" values
+for (i in 1:nrow(lipidomicsDF)) {
+  # Extract the current row's lipidClass
+  current_lipidClass <- lipidomicsDF$lipidClass[i]
 
-## Load Mirage data
+  # Lookup the corresponding LLOQ and ULOQ values in detection_limits
+  current_LLOQ <- detection_limits$LLOQ[detection_limits$lipidClass == current_lipidClass]
+  current_ULOQ <- detection_limits$ULOQ[detection_limits$lipidClass == current_lipidClass]
 
-Load from "FINAL MIRAGE DATASET.xlsx".
+  # Check for NA values in pmol or in the LLOQ/ULOQ lookup
+  if (is.na(lipidomicsDF$pmol[i]) | length(current_LLOQ) == 0 | length(current_ULOQ) == 0) {
+    lipidomicsDF$within_threshold[i] <- NA # Assign NA if there's an NA value in pmol or LLOQ/ULOQ cannot be found
+  } else if (lipidomicsDF$pmol[i] < current_LLOQ) {
+    lipidomicsDF$within_threshold[i] <- 1 # Below LLOQ
+  } else if (lipidomicsDF$pmol[i] > current_ULOQ) {
+    lipidomicsDF$within_threshold[i] <- 2 # Above ULOQ
+  } else {
+    lipidomicsDF$within_threshold[i] <- 0 # Within the threshold
+  }
+}
+```
+
+## Mirage data
+**Load from "FINAL MIRAGE DATASET.xlsx"**
 
 !!! DUPLICATE IDS: "MG023" and "MG019" both are duplicates that appear with same group as in id from Pittsburg and TRI. Assumption: All samples are from TRI if not specified otherwise. Therefore, the Excel file "FINAL MIRAGE DATASET.xlsx", sheet "Not Imputed-Clean" was changed to make the merge work. All changes are marked with red text.
 
@@ -174,16 +234,14 @@ new_col_names <- sapply(names(mirage_data), function(col_name) {
 names(mirage_data) <- new_col_names
 ```
 
-### Add additional variables
-
+**Calculate additional rows**
 ```{r}
 mirage_data$tdee_kcal_24hr_ffm_pre <- mirage_data$tdee_kcal_24hr_pre / mirage_data$lean_mass_dxa_pre
 ```
 
-### Mirage, pre-post variables
-
+### Select variables & long format
+**pre-post variables**
 Define variables of interest for pre-post delta correlations against lipids.
-
 ```{r}
 # List with pre-post variables of interest
 mirage_ch_vars <- list(
@@ -200,8 +258,7 @@ mirage_ch_vars <- list(
 )
 ```
 
-### Cross-sectional variables
-
+**Cross-sectional variables**
 Define variables of interest to compare between all individuals at pre
 
 ```{r}
@@ -221,9 +278,8 @@ mirage_crossSectional_vars <- list(
 )
 ```
 
-### Mirage into long
-
-Make into long format based on defined interesting variables
+**Mirage long format**
+Convert Mirage dataset with selected variables into long format with selected Pre|Post varibles 
 
 ```{r}
 # Flatten the list of column names into a single vector
@@ -258,84 +314,9 @@ mirage_data_long_ch <- mirage_data_long_ch %>%
   filter(!all(is.na(age)))
 ```
 
-# LLOQ & ULOQ
+# Analysis based on changes
 
-Make column to denote if measurement is within (0), below LLOQ (1) or above ULOQ (2)
-
-```{r}
-# Initialize the "within_threshold" column in lipidomicsDF
-lipidomicsDF$within_threshold <- NA
-
-# Iterate over lipidomicsDF and assign "within_threshold" values
-for (i in 1:nrow(lipidomicsDF)) {
-  # Extract the current row's lipidClass
-  current_lipidClass <- lipidomicsDF$lipidClass[i]
-
-  # Lookup the corresponding LLOQ and ULOQ values in detection_limits
-  current_LLOQ <- detection_limits$LLOQ[detection_limits$lipidClass == current_lipidClass]
-  current_ULOQ <- detection_limits$ULOQ[detection_limits$lipidClass == current_lipidClass]
-
-  # Check for NA values in pmol or in the LLOQ/ULOQ lookup
-  if (is.na(lipidomicsDF$pmol[i]) | length(current_LLOQ) == 0 | length(current_ULOQ) == 0) {
-    lipidomicsDF$within_threshold[i] <- NA # Assign NA if there's an NA value in pmol or LLOQ/ULOQ cannot be found
-  } else if (lipidomicsDF$pmol[i] < current_LLOQ) {
-    lipidomicsDF$within_threshold[i] <- 1 # Below LLOQ
-  } else if (lipidomicsDF$pmol[i] > current_ULOQ) {
-    lipidomicsDF$within_threshold[i] <- 2 # Above ULOQ
-  } else {
-    lipidomicsDF$within_threshold[i] <- 0 # Within the threshold
-  }
-}
-```
-
-# Normalization and transformation
-
-## Lipidomics data
-
-### Weight normalization
-
-```{r}
-lipidomicsDF$pmol_mg <- lipidomicsDF$pmol / lipidomicsDF$equiv_weight_extracted
-```
-
-### Log transform
-
-Log transform the weight normalized lipidomics data. 1 is added to all values to avoid zores
-
-```{r}
-# Transform and add a small constant (+1) to avoid log(0)
-lipidomicsDF <- lipidomicsDF %>%
-  mutate(pmol_mg_log = log(pmol_mg + 1))
-```
-
-### Z-transformation
-
-```{r}
-# Make column with Z-transformed data
-lipidomicsDF <- lipidomicsDF %>% mutate(pmol_mg_znorm = scale(pmol_mg))
-```
-
-Sort data for future analysis
-
-```{r}
-# Sort the dataframe by 'id' and 'time'
-lipidomicsDF <- lipidomicsDF %>%
-  arrange(id, time)
-
-# Find all lipidClass-lipidComposition
-unique_combinations <- lipidomicsDF %>%
-  distinct(lipidClass, lipidComposition) %>%
-  arrange(lipidClass, lipidComposition)
-
-# Find unique lipid classes
-unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
-```
-
-# Correlation analysis
-
-## Analysis based on changes
-
-### Prepare data (function)
+## Prepare data (function)
 
 Function to prepare and merge data into wide format
 
@@ -411,7 +392,7 @@ prepare_and_combine_data <- function(lipidomicsData, pre_post_cols, mirageData, 
 }
 ```
 
-### Correlation statistics (function)
+## Statistics (function)
 
 Function to get correlation between changes of defined parameters
 
@@ -563,7 +544,7 @@ correlation_of_change <- function(correlation_df, lipidomicsDF, mirage_data_long
 }
 ```
 
-### Plot correlation, scatter
+## Plot, scatter (function)
 
 ```{r}
 correlation_change_plot <- function(correlation_df, mirage_ch_vars, correlation_results, savePath, lipidclass, lipidcomposition) {
@@ -670,7 +651,7 @@ for (i in 2:length(plotList)) {
 }
 ```
 
-### Run functions: Prepare, stat, plot
+## Run functions
 
 ```{r}
 # Save folder for .jpg output files
@@ -736,8 +717,7 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
-### Correct p-values
-
+## Adjust & plot p-values
 ```{r}
 # BH correct p-values
 # Name the columns that should be adjusted
@@ -850,11 +830,11 @@ for (i in 1:nrow(plot_nonadj_vs_adj)) {
 }
 ```
 
-## Cross sectional analysis on pre
+# Cross sectional analysis on pre
 
 Analyse correlation between variables from the mirage dataset and the lipidomics data for all subjects at the time point pre.
 
-### Prepare data (function)
+## Prepare data (function)
 
 ```{r}
 # run function test
@@ -920,7 +900,7 @@ lipidomics_wide <- lipidomics_wide %>%
 # combined <- prepare_and_combine_crossSection (lipidomicsDF, mirage_data, lipidclass = "Cer", lipidcomposition = NULL)
 ```
 
-### Statistics (function)
+## Statistics (function)
 
 ```{r}
 # Define a function to compute correlations of change
@@ -1018,7 +998,7 @@ correlation_cross_sectional <- function(correlation_df, lipidomicsDF, mirage_var
 # cross_res <- correlation_cross_sectional (combined, lipidomicsDF, mirage_crossSectional_vars, lipidclass = "Cer", lipidcomposition = "14:0")
 ```
 
-### Plot correlation scatter
+## Plot scatter (function)
 
 ```{r}
 correlation_crossSectional_plot <- function(correlation_df, mirage_crossSectional_vars, correlation_results, savePath, lipidclass, lipidcomposition) {
@@ -1120,7 +1100,7 @@ combined_plot <- combined_plot + plot_layout(ncol = 2)
 }
 ```
 
-### Run functions: Prepare, stat, plot
+## Run functions
 
 ```{r}
 # Save folder for .jpg output files
@@ -1185,8 +1165,8 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
-### Correct p-values
-
+## Adjust & plot p-values
+**Correct p-values based on Bejamini-Hochberg**
 ```{r}
 # BH correct p-values
 # Name the columns that should be adjusted
@@ -1207,7 +1187,7 @@ correlation_results_crossSection_composition <- adjust_p_values_within_group(cor
 correlation_results_crossSection_class <- adjust_p_values_within_group(correlation_results_crossSection_class, cols_to_adjust)
 ```
 
-### Plot p-values sorted
+**Plot p-values**
 
 ```{r}
 generate_barplot_crossSection <- function(data, col_non_corrected, col_corrected, output_base_path, data_name) {
@@ -1307,7 +1287,6 @@ for (i in 1:nrow(plot_nonadj_vs_adj)) {
 # Pre-post group changes for lipids
 
 ## Mixed models
-
 Insulin sensitivity. Original data was analyzed by one-way ANOVA. So this would be to double check results
 
 mixed model for pre-post changes for every lipid composition within all lipid classes and for every lipid class.
@@ -1382,7 +1361,7 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
   )
 }
 
-# Run function for lipidClass and lipidComposition
+# Run function for lipid composition within lipid class
 result.lipid.pre_post.class_comp <- pmap(
   list(lipidClass = unique_combinations$lipidClass, lipidComposition = unique_combinations$lipidComposition),
   ~ mixedmodel_pre_post(lipidomicsDF, "pmol_mg", ..1, ..2)
@@ -1390,13 +1369,11 @@ result.lipid.pre_post.class_comp <- pmap(
 # Naming the results list elements
 names(result.lipid.pre_post.class_comp) <- paste(unique_combinations$lipidClass, unique_combinations$lipidComposition, sep = "_")
 
-# Use map to iterate over lipid classes
-result.lipid.pre_post.class <- map(unique_lipid_classes, ~ mixedmodel_pre_post(lipidomicsDF, "pmol_mg", .x))
+# Use map to iterate over lipid classes and use z-normalized data
+result.lipid.pre_post.class <- map(unique_lipid_classes, ~ mixedmodel_pre_post(lipidomicsDF, "pmol_mg_znorm", .x))
 
 # Naming the results list
 names(result.lipid.pre_post.class) <- unique_lipid_classes
-
-# Save fits
 ```
 
 Sort, adjust by Benjamini-Hochberg for lipid composition within lipid class
@@ -1472,7 +1449,6 @@ pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class
 ```
 
 ## p-value plots
-
 Make plots of p-values sorted highest to lowest for lipid classes and lipid compositions within each lipid class
 
 ```{r}
@@ -1556,9 +1532,7 @@ for (i in 1:nrow(cols_to_plot)) {
 ```
 
 ## Scatter plots
-
 Scatter plots with insulin sensitivity as colormap. Datapoints above ULOQ and below LLOQ are marked with triangles for.
-
 ```{r}
 # Create a named vector mapping IDs to continuous values for coloring
  color_map <- setNames(mirage_data$gdr_rd_ss2_mg_kg_ffm_min_pre, mirage_data$id)
@@ -1638,7 +1612,7 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
 
   # Define the filename and save the plot
   filename <- paste0(
-    "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/plot, scatter composition/",
+    "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/lipids, pre-post/plot, scatter composition/",
     gsub("/", "_", gsub(":", ",", paste(lipid_class, lipid_composition, sep = " "))), ".jpg"
   )
   ggsave(filename, plot = plot, device = "jpeg", width = 8, height = 6, dpi = 300)
@@ -1663,20 +1637,20 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, detection_limits, p_val_
   # Filter data based on lipid class and available time
   filtered_data <- lipidomicsDF %>%
     filter(lipidClass == lipid_class & !is.na(time))
-
-  # Min-max normalisation
-  filtered_data <- filtered_data %>%
-    group_by(lipidComposition) %>%
-    mutate(
-      min_val = min(pmol_mg, na.rm = TRUE),
-      max_val = max(pmol_mg, na.rm = TRUE),
-      pmol_mg_normalized = if_else(max_val > min_val,
-        (pmol_mg - min_val) / (max_val - min_val),
-        0, # Or another appropriate value for your analysis
-        missing = NA_real_ # Handle NA values if needed
-      )
-    ) %>%
-    ungroup()
+browser()
+#  # Min-max normalisation
+#  filtered_data <- filtered_data %>%
+#    group_by(lipidComposition) %>%
+#    mutate(
+#      min_val = min(pmol_mg, na.rm = TRUE),
+#      max_val = max(pmol_mg, na.rm = TRUE),
+#      pmol_mg_normalized = if_else(max_val > min_val,
+#        (pmol_mg - min_val) / (max_val - min_val),
+#        0, # Or another appropriate value for your analysis
+#        missing = NA_real_ # Handle NA values if needed
+#      )
+#    ) %>%
+#    ungroup()
 
   # Find correct p-values
   search_key <- lipid_class
@@ -1702,12 +1676,12 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, detection_limits, p_val_
     x = factor(interaction(group, time, sep = " "),
       levels = c("HED Pre", "HED Post", "DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post")
     ),
-    y = pmol_mg_normalized, group = interaction(id, group)
+    y = pmol_mg_znrom, group = interaction(id, group)
   )) +
     geom_line(aes(group = interaction(id, group, lipidComposition)), color = "darkgrey", size = 0.2, position = position_nudge(x = 0.03)) +
     geom_point(aes(color = lipidComposition), alpha = 0.5, position = position_nudge(x = 0.03)) + # Color by lipidComposition
     scale_color_manual(values = rainbow(length(unique(filtered_data$lipidComposition)))) + # Use discrete colors for lipidComposition
-    labs(title = lipid_class, subtitle = annotation_pvals_slope, y = "Lipid concentraction, min-max normalised", x = "") +
+    labs(title = lipid_class, subtitle = annotation_pvals_slope, y = "Lipid concentraction, Z normalised", x = "") +
     # Insert P-values pre post
     annotate("text",
       x = c(1.5, 3.5, 5.5), y = 1.05,
@@ -1728,7 +1702,7 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, detection_limits, p_val_
 
   # Define the filename and save the plot
   filename <- paste0(
-    "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/plot, scatter class/",
+    "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/lipids, pre-post/plot, scatter class/",
     gsub(" ", "_", lipid_class), ".jpg"
   )
   ggsave(filename, plot = plot, device = "jpeg", width = 8, height = 6, dpi = 300)
