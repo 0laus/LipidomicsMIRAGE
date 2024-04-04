@@ -792,8 +792,6 @@ for (lipid_class in unique_lipid_classes) {
 ```{r}
 #Gather the Spearman p-value columns
 
-# Input for function:  correlation_values_ch_composition, correlation_values_ch_class
-
 # For composition data
 long_format_p_adj_comp <- correlation_values_ch_composition %>%
   select(lipid, test_against, spearman_p_all, spearman_p_HED, spearman_p_DIWL, spearman_p_WLEX) %>%
@@ -1769,10 +1767,10 @@ names(result.lipid.pre_post.class) <- unique_lipid_classes
 ```
 
 Sort, adjust by Benjamini-Hochberg for lipid composition within lipid class
-
 ```{r}
 prepare_lipid_data_for_plotting <- function(result_data) {
   pvals_df <- data.frame()
+  est_df <- data.frame()
 
   contrasts_prepost <- c("Pre HED - Post HED", "Pre DIWL - Post DIWL", "Pre WLEX - Post WLEX")
   contrasts_slope <- c("Pre - Post : HED - DIWL", "Pre - Post : HED - WLEX", "Pre - Post : DIWL - WLEX")
@@ -1804,16 +1802,37 @@ prepare_lipid_data_for_plotting <- function(result_data) {
       if (nrow(filtered) > 0) filtered$p.value[1] else NA
     }, USE.NAMES = TRUE)
 
+        prepost_est <- sapply(contrasts_prepost, function(c) {
+      filtered <- prepost_results %>%
+        filter(contrast == c)
+      if (nrow(filtered) > 0) filtered$estimate[1] else NA
+    }, USE.NAMES = TRUE)
+    
+    slope_est <- sapply(contrasts_slope, function(c) {
+      filtered <- slope_results %>%
+        filter(contrast == c)
+      if (nrow(filtered) > 0) filtered$estimate[1] else NA
+    }, USE.NAMES = TRUE)
+    
+    
+    # Combine values into single data
+    # p-values
     combined_pvals <- c(prepost_pvals, slope_pvals)
     combined_pvals <- setNames(combined_pvals, c(contrasts_prepost, contrasts_slope))
     pvals_df <- rbind(pvals_df, cbind(Lipid = test_name, t(as.data.frame(list(combined_pvals)))))
+    
+    # Estimates
+    combined_est <- c(prepost_est, slope_est)
+    combined_est <- setNames(combined_est, c(contrasts_prepost, contrasts_slope))
+    est_df <- rbind(est_df, cbind(Lipid = test_name, t(as.data.frame(list(combined_est)))))
+    
   }
 
-  # Select all columns after the first one
+  # Select all columns after the first one to exclude lipid column
   corrected_cols <- names(pvals_df)[-1]
 
-   # Remove rows where every column from the second column onwards contains NA
-  pvals_df <- pvals_df[rowSums(is.na(pvals_df[, -1])) < (ncol(pvals_df) - 1), ]
+     # Remove rows where every column from the second column onwards contains NA
+   pvals_df <- pvals_df[rowSums(is.na(pvals_df[, -1])) < (ncol(pvals_df) - 1), ]
   
   # Apply Benjamini-Hochberg correction and create new columns with the suffix "_BH_corrected"
   for (col in corrected_cols) {
@@ -1822,34 +1841,242 @@ prepare_lipid_data_for_plotting <- function(result_data) {
 
   # Reset row names to simple sequential numbers
   rownames(pvals_df) <- NULL
+  rownames(est_df) <- NULL
 
+   # Keep rows in est_df that are also in the filtered pvals_df based on row names
+    est_df <- est_df[rownames(est_df) %in% rownames(pvals_df), ]
+  
   # Convert the columns to numeric
-  for (i in 2:ncol(pvals_df)) {
+ # p-vals
+   for (i in 2:ncol(pvals_df)) {
     if (!is.numeric(pvals_df[[i]])) {
       pvals_df[[i]] <- as.numeric(pvals_df[[i]])
     }
   }
+  # estimates 
+   for (i in 2:ncol(est_df)) {
+    if (!is.numeric(est_df[[i]])) {
+      est_df[[i]] <- as.numeric(est_df[[i]])
+    }
+  }
 
-  return(pvals_df)
+  # Combine the est and pvals dataframes into a list to be returned
+  est_and_pvals <- list(p.vals = pvals_df, estimates = est_df)
+  return(est_and_pvals)
 }
 
 # Run for class and composition combined
 # Combine lists
 result.lipid.pre_post.class_and_comp <- c(result.lipid.pre_post.class_comp, result.lipid.pre_post.class)
 # Run prepare data function on combined list
-pvals_lipid_class_and_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_and_comp)
+est_and_p_lipid_class_and_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_and_comp)
 
 # Prepare data for plotting lipid composition within each lipid class
-pvals_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp)
+est_and_p_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp)
 
 # Prepare data for plotting lipid classes
-pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class)
+est_and_p_pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class)
+```
+
+## Heatmap
+```{r}
+# Gather log2-fold change and slope
+View(est_and_p_lipid_class_and_comp)
+
+# Get slope
+View(est_and_p_lipid_class_and_comp)
+
+
+# Group lipidclasses to make multiple, clean heatmaps
+lipids_groups <- list(
+  gr_tag_ac = c("TAG", "AC"),  # Glycerolipids and Acyl carnitines
+  gr_dg = c("1,2-DG", "1,3-DG"),  # Diglycerides
+  gr_pc = c("PC"),  # Phosphatidylcholines
+  gr_pa_pe = c("PA", "PE"),  # Phosphatidic acid and Phosphatidylethanolamines
+  gr_pg_pi_ps = c("PG", "PI", "PS"),  # Phosphatidylglycerols, Phosphatidylinositols, Phosphatidylserines
+  gr_cer_spm_sph = c("SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingomyelins, Sphingosines, Ceramides and derivatives
+  gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS")  # Lysophospholipids
+)
+
+
+# Define function to filter and sort lipids based on group names
+filter_lipid_group_base <- function(data_frame, lipid_group) {
+  # Create the pattern for matching lipid groups
+  pattern <- paste0("^(", paste(lipid_group, collapse = "|"), ")")
+  # Sort the data_frame by lipid column
+  sorted_data_frame <- data_frame[order(data_frame$lipid), ]
+  # Filter based on the pattern and return the sorted & filtered data frame
+  sorted_filtered_data_frame <- sorted_data_frame[grepl(pattern, sorted_data_frame$lipid), ]
+  return(sorted_filtered_data_frame)
+}
+
+# Apply the filter function to each group and store the results in a lists
+# p-values
+long_format_p_adj_groups.non <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.non)
+long_format_p_adj_groups.gr <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.gr)
+long_format_p_adj_groups.all <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.all)
+# correlations
+long_format_corr_groups <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_cor)
+
+
+# Function to create 'unique_test_against' column
+mutate_unique_column_p <- function(data_frame) {
+  data_frame %>%
+    mutate(unique_test_against = paste0(sub("spearman_p_", "", spearman_type), "_", test_against))
+}
+
+# Adjust the function for correlation data frames if necessary
+mutate_unique_column_corr <- function(data_frame) {
+  data_frame %>%
+    mutate(unique_test_against = paste0(sub("spearman_rho_", "", spearman_type), "_", test_against))
+}
+
+# Apply the mutation function to each group's data frames for p-values
+long_format_p_adj_groups.non <- lapply(long_format_p_adj_groups.non, mutate_unique_column_p)
+long_format_p_adj_groups.gr <- lapply(long_format_p_adj_groups.gr, mutate_unique_column_p)
+long_format_p_adj_groups.all <- lapply(long_format_p_adj_groups.all, mutate_unique_column_p)
+
+# Apply the mutation function to each group's data frames for correlations
+long_format_corr_groups <- lapply(long_format_corr_groups, mutate_unique_column_corr)
+
+
+# Function to perform negative log10 transformation and remove p_value column
+transform_p_values <- function(df) {
+  df %>%
+    mutate(p_log10 = -log10(p_value)) %>%
+    select(-p_value)
+}
+
+# Apply the transformation to each list
+long_format_p_adj_log10.non <- lapply(long_format_p_adj_groups.non, transform_p_values)
+long_format_p_adj_log10.gr <- lapply(long_format_p_adj_groups.gr, transform_p_values)
+long_format_p_adj_log10.all <- lapply(long_format_p_adj_groups.all, transform_p_values)
+
+
+# # Make p-values positive or negative based on positive or negative correlation
+# adjust_p_values_based_on_correlation <- function(df_p, df_cor) {
+#   # Ensure the correlation dataframe has the unique_test_against column
+#   df_cor <- df_cor %>%
+#     mutate(unique_test_against = paste0(sub("spearman_rho_", "", spearman_type), "_", test_against))
+#   
+#   # Perform the left join, p-value adjustment, and selection
+#   df_p <- df_p %>%
+#     left_join(select(df_cor, lipid, unique_test_against, rho_value), by = c("lipid", "unique_test_against")) %>%
+#     mutate(p_log10 = ifelse(rho_value < 0, -p_log10, p_log10)) %>%
+#     select(-rho_value)
+#   
+#   return(df_p)
+# }
+# # Apply the adjustment function to each group's data frames in parallel
+# long_format_p_adj_groups.non <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.non, long_format_corr_groups)
+# long_format_p_adj_groups.gr <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.gr, long_format_corr_groups)
+# long_format_p_adj_groups.all <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.all, long_format_corr_groups)
+
+ 
+# Define a function to spread the data and convert it to a matrix
+spread_and_convert_matrix <- function(df, unitName) {
+  result_matrix <- df %>%
+    select(lipid, unique_test_against, all_of(unitName)) %>%
+    pivot_wider(names_from = unique_test_against, 
+                values_from = unitName, 
+                values_fill = setNames(list(NA), unitName)) %>%
+    column_to_rownames(var = "lipid") %>%
+    as.matrix()
+  return(result_matrix)
+}
+
+# Apply the function to each list
+matrices_p_adj_non <- lapply(long_format_p_adj_groups.non, function(x) spread_and_convert_matrix(x, "p_value"))
+matrices_p_adj_gr <- lapply(long_format_p_adj_groups.gr, function(x) spread_and_convert_matrix(x, "p_value"))
+matrices_p_adj_all <- lapply(long_format_p_adj_groups.all, function(x) spread_and_convert_matrix(x, "p_value"))
+# To correlation values
+matrices_rho <- lapply(long_format_corr_groups, function(x) spread_and_convert_matrix(x, "rho_value"))
+
+
+generate_heatmap <- function(hm_matrix, p_val_matrix, colorMap, pLims) {
+  # Assumes pLims is a list with named elements corresponding to each threshold, e.g., list(p1 = 0.001, p2 = 0.01, p3 = 0.05)
+  
+# Extract test_against by removing the first part (treatment group) and the first underscore
+# This joins back the remaining parts to form the full 'test_against' label
+colTitles <- sapply(strsplit(colnames(hm_matrix), "_", fixed = TRUE), function(x) paste(x[-1], collapse = "_"))
+colTitles <- unique(colTitles)
+  
+  
+# Modify the column names to only show the group
+colnames(hm_matrix) <- sapply(strsplit(colnames(hm_matrix), "_", fixed = TRUE), function(x) {
+  # Concatenate the first part with the first four letters of the second part and "..."
+  paste0(x[1], "", substr(x[2], 1, 0), "")
+})
+
+
+  Heatmap(hm_matrix,
+          name = "rho", # Sets the name of the color scale
+          
+          col = colorMap, # Use provided color map
+          rect_gp = gpar(col = "white", lwd = 0.5), # Make space between each square
+          row_names_side = "left", # Position of row labels
+          row_names_gp = gpar(fontsize = 7), # Change font size of row labels
+          
+          column_split = rep(1:(ncol(hm_matrix) / 4), each = 4), # Splits the columns and names them
+          column_title = colTitles, # Custom titles for each split
+          column_names_rot = 45, # Rotate column names for better readability
+          column_names_gp = gpar(fontsize = 8, fontface = "bold"),
+          column_title_side = "top", # Placement of the column titles
+          column_title_gp = gpar(fontsize = 7, fontface = "bold"),
+          #column_title = NULL, # Removes titles for split (could be adjusted to represent test)
+      
+          border = TRUE, # Set border around the splits
+          cluster_rows = FALSE, # Don't make clusters
+          cluster_columns = FALSE, # Don't make clusters
+          
+          cell_fun = function(j, i, x, y, width, height, fill) {
+              if (!is.na(p_val_matrix[i, j])) {
+                  if (p_val_matrix[i, j] < pLims$p1) {
+                      grid.text("+++", x, y, gp = gpar(col = "black", fontsize = 7, fontface = "bold"), just = "center")
+                  } else if (p_val_matrix[i, j] < pLims$p2) {
+                      grid.text("++", x, y, gp = gpar(col = "black", fontsize = 7, fontface = "bold"), just = "center")
+                  } else if (p_val_matrix[i, j] < pLims$p3) {
+                      grid.text("+", x, y, gp = gpar(col = "black", fontsize = 7, fontface = "bold"), just = "center")
+                  }
+              }
+          })
+}
+
+# Define color map for heatmap
+color_mapping <- colorRamp2(c(-1, 0, 1), c("blue", "white", "red"))
+
+# Set p-value limits
+p_value_limits <- list(p1 = 0.001, p2 = 0.01, p3 = 0.05)
+
+# Create a list for the heatmaps
+hm <- list()
+
+# Assuming 'matrices_rho$gr1' is your correlation matrix and 'matrices_p_adj_non$gr1' is your p-value matrix
+for (i in 1:length(lipids_groups)) {
+  # Generate heatmap and store it in the list
+  hm[[i]] <- generate_heatmap(matrices_rho[[i]], matrices_p_adj_gr[[i]], color_mapping, p_value_limits)
+}
+
+# Define the path and name of your PDF file
+pdf_path <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/correlations in changes/heatmap/heatmap.pdf"
+
+# Open a PDF device
+pdf(pdf_path, width = 12, height = 14)
+
+# Draw your heatmaps. Each call to draw() will create a new page in the PDF for each heatmap
+for (i in 1:length (hm)){
+  draw(hm[[i]])
+}
+
+# Don't forget to close the device
+dev.off()
 
 ```
 
+
+
 ## p-value plots
 Make plots of p-values sorted highest to lowest for lipid classes and lipid compositions within each lipid class
-
 ```{r}
 generate_barplot <- function(data, col_index_non_corrected, col_index_corrected, output_base_path, data_name) {
   # Extract test names based on indices
@@ -1919,27 +2146,28 @@ cols_to_plot <- matrix(c(2, 8, 3, 9, 4, 10, 5, 11, 6, 12, 7, 13), ncol = 2, byro
 dataframe_name <- "lipid class"
 
 for (i in 1:nrow(cols_to_plot)) {
-  generate_barplot(pvals_lipid_class, cols_to_plot[i, 1], cols_to_plot[i, 2], paste0(output_base_path, "/class"), dataframe_name)
+  generate_barplot(est_and_p_pvals_lipid_class$p.vals, cols_to_plot[i, 1], cols_to_plot[i, 2], paste0(output_base_path, "/class"), dataframe_name)
 }
 
 # Lipid class and composition
 dataframe_name_comp <- "lipid comp"
 
 for (i in 1:nrow(cols_to_plot)) {
-  generate_barplot(pvals_lipid_comp, cols_to_plot[i, 1], cols_to_plot[i, 2], paste0(output_base_path, "/composition"), dataframe_name_comp)
+  generate_barplot(est_and_p_lipid_comp$p.vals, cols_to_plot[i, 1], cols_to_plot[i, 2], paste0(output_base_path, "/composition"), dataframe_name_comp)
 }
 
 # Lipid class and composition
 dataframe_name_comp_and_class <- "lipid class and comp"
 
 for (i in 1:nrow(cols_to_plot)) {
-  generate_barplot(pvals_lipid_class_and_comp, cols_to_plot[i, 1], cols_to_plot[i, 2], paste0(output_base_path, "/comp_and_class"), dataframe_name_comp)
+  generate_barplot(est_and_p_lipid_class_and_comp$p.vals, cols_to_plot[i, 1], cols_to_plot[i, 2], paste0(output_base_path, "/comp_and_class"), dataframe_name_comp)
 }
 
 ```
 
+
 ## Scatter plots
-Scatter plots with insulin sensitivity as colormap. Datapoints above ULOQ and below LLOQ are marked with triangles for.
+Scatter plots with insulin sensitivity as colormap. Data points above ULOQ and below LLOQ are marked with triangles for.
 ```{r}
 # Create a named vector mapping IDs to continuous values for coloring
 # color_map <- setNames(mirage_data$gdr_rd_ss2_mg_kg_ffm_min_pre, mirage_data$id)
@@ -1979,7 +2207,17 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
     y = pmol_mg, group = interaction(id, group)
   )) +
     geom_line(aes(group = interaction(id, group)), color = "darkgrey", position = position_nudge(x = 0.03)) +
-    geom_point(aes(color = color_map[id]), alpha = 0.5, position = position_nudge(x = 0.03)) +
+    
+      stat_summary( # Add the mean
+    aes(group = interaction(group, time)),
+    fun = mean, 
+    geom = "point",
+    color = "black", 
+    size = 2, 
+    shape = 23,
+    fill = "black"
+  )+
+      geom_point(aes(color = color_map[id]), alpha = 0.5, position = position_nudge(x = 0.03)) +
     geom_boxplot(aes(group = interaction(group, time)),
       width = 0.3, alpha = 0.2, outlier.shape = NA,
       position = position_dodge(width = 0.75), color = "black"
@@ -1992,9 +2230,10 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
       data = subset(filtered_data, within_threshold == 1), aes(y = pmol_mg), size = 3, shape = 25, color = "black", fill = "grey",
       alpha = 0.3, position = position_nudge(x = 0.03) # Down triangle for values 
     ) +
+      
     scale_color_manual(values = c("M" = "blue", "F" = "red"), name = "Gender") +
     labs(
-      title = paste(lipid_composition, lipid_class),
+      title = paste(lipid_class, lipid_composition),
       subtitle = annotation_pvals_slope,
       y = expression("Lipid concentration" ~ "(pmol ·" ~ mg^-1 * ")"),
       x = ""
@@ -2029,7 +2268,7 @@ unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
 for (lipid_class in unique_lipid_classes) {
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
   for (lipid_composition in lipid_compositions_in_class) {
-    plot_lipid(lipidomicsDF, lipid_composition, lipid_class, color_map, detection_limits, pvals_lipid_comp)
+    plot_lipid(lipidomicsDF, lipid_composition, lipid_class, color_map, detection_limits, est_and_p_lipid_comp$p.vals)
   }
 }
 ```
@@ -2115,7 +2354,7 @@ plot <- ggplot(filtered_data, aes(
 
 # Loop to call the plotting function for each lipid class
 for (lipid_class in unique_lipid_classes) {
-  plot_lipid_class(lipidomicsDF, lipid_class, detection_limits, pvals_lipid_class)
+  plot_lipid_class(lipidomicsDF, lipid_class, detection_limits, est_and_p_pvals_lipid_class$p.vals)
 }
 ```
 
@@ -2189,7 +2428,7 @@ plot <- ggplot(filtered_data, aes(
 
 # Loop to call the plotting function for each lipid class
 for (lipid_class in unique_lipid_classes) {
-  plot_lipid_class_z_score(lipidomicsDF, lipid_class, detection_limits, pvals_lipid_class)
+  plot_lipid_class_z_score(lipidomicsDF, lipid_class, detection_limits, est_and_p_pvals_lipid_class$p.vals)
 }
 ```
 
