@@ -1669,7 +1669,6 @@ for (i in 1:nrow(plot_nonadj_vs_adj)) {
 
 ## Mixed models
 Insulin sensitivity. Original data was analyzed by one-way ANOVA. So this would be to double check results
-
 mixed model for pre-post changes for every lipid composition within all lipid classes and for every lipid class.
 
 ```{r}
@@ -1819,12 +1818,12 @@ prepare_lipid_data_for_plotting <- function(result_data) {
     # p-values
     combined_pvals <- c(prepost_pvals, slope_pvals)
     combined_pvals <- setNames(combined_pvals, c(contrasts_prepost, contrasts_slope))
-    pvals_df <- rbind(pvals_df, cbind(Lipid = test_name, t(as.data.frame(list(combined_pvals)))))
+    pvals_df <- rbind(pvals_df, cbind(lipid = test_name, t(as.data.frame(list(combined_pvals)))))
     
     # Estimates
     combined_est <- c(prepost_est, slope_est)
     combined_est <- setNames(combined_est, c(contrasts_prepost, contrasts_slope))
-    est_df <- rbind(est_df, cbind(Lipid = test_name, t(as.data.frame(list(combined_est)))))
+    est_df <- rbind(est_df, cbind(lipid = test_name, t(as.data.frame(list(combined_est)))))
     
   }
 
@@ -1843,8 +1842,8 @@ prepare_lipid_data_for_plotting <- function(result_data) {
   rownames(pvals_df) <- NULL
   rownames(est_df) <- NULL
 
-   # Keep rows in est_df that are also in the filtered pvals_df based on row names
-    est_df <- est_df[rownames(est_df) %in% rownames(pvals_df), ]
+   # Only keep rows in est_df where the lipid values match those in pvals_df
+est_df <- est_df[est_df$lipid %in% pvals_df$lipid, ]
   
   # Convert the columns to numeric
  # p-vals
@@ -1880,12 +1879,77 @@ est_and_p_pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_
 
 ## Heatmap
 ```{r}
-# Gather log2-fold change and slope
-View(est_and_p_lipid_class_and_comp)
 
-# Get slope
-View(est_and_p_lipid_class_and_comp)
+# Assuming your list is named list_df
+pvals_df <- est_and_p_lipid_class_and_comp$p.vals
+estimates_df <- est_and_p_lipid_class_and_comp$estimates
 
+# Set 'lipid' as row names
+rownames(pvals_df) <- pvals_df$lipid
+rownames(estimates_df) <- estimates_df$lipid
+
+# Remove the 'lipid' column
+pvals_df <- pvals_df[ , !(names(pvals_df) %in% c("lipid"))]
+estimates_df <- estimates_df[ , !(names(estimates_df) %in% c("lipid"))]
+
+# Select the specified columns for hm_data.p-vals matrix
+hm_data_pvals <- pvals_df[ , c("Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
+                               "Pre WLEX - Post WLEX (corrected)", "Pre - Post : HED - DIWL (corrected)",
+                               "Pre - Post : HED - WLEX (corrected)", "Pre - Post : DIWL - WLEX (corrected)")]
+
+
+# Select the specified columns for hm_data.estimates matrix
+hm_data_estimates <- estimates_df[ , c("Pre HED - Post HED", "Pre DIWL - Post DIWL", 
+                                       "Pre WLEX - Post WLEX", "Pre - Post : HED - DIWL",
+                                       "Pre - Post : HED - WLEX", "Pre - Post : DIWL - WLEX")]
+
+### Calculate log2 change
+# Composition
+log2fold_ch_comp <- lipidomicsDF %>%
+  group_by(lipidClass, lipidComposition, group) %>%
+  summarize(
+    log2FoldChange = log2(mean(pmol_mg[time == "Post"], na.rm = TRUE) / 
+                          mean(pmol_mg[time == "Pre"], na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+# Class
+log2fold_ch_class <- lipidomicsDF %>%
+  group_by(lipidClass, group) %>%
+  summarize(
+    log2FoldChange = log2(mean(pmol_mg[time == "Post"], na.rm = TRUE) / 
+                          mean(pmol_mg[time == "Pre"], na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+### Make names to match lipid
+# Composition
+log2fold_ch_comp <- log2fold_ch_comp %>%
+  mutate(lipid = paste(lipidClass, lipidComposition, sep = "_")) %>%
+  select(-lipidComposition, -lipidClass)
+
+# Class
+log2fold_ch_class <- log2fold_ch_class %>%
+  rename(lipid = lipidClass)
+
+# Rename col names to match the ones on the DF
+
+HED vs HED etc.
+
+### Replace changes based on log2change values
+
+### SLOPE
+### Calculate means for which to normalise slopes
+
+### Normalise slopes in the data frame
+
+
+
+# Convert to matrix
+# p-vals
+hm_data_pvals_matrix <- as.matrix(hm_data_pvals)
+# Estimates
+hm_data_estimates_matrix <- as.matrix(hm_data_estimates)
 
 # Group lipidclasses to make multiple, clean heatmaps
 lipids_groups <- list(
@@ -1909,6 +1973,7 @@ filter_lipid_group_base <- function(data_frame, lipid_group) {
   sorted_filtered_data_frame <- sorted_data_frame[grepl(pattern, sorted_data_frame$lipid), ]
   return(sorted_filtered_data_frame)
 }
+
 
 # Apply the filter function to each group and store the results in a lists
 # p-values
@@ -2087,22 +2152,22 @@ generate_barplot <- function(data, col_index_non_corrected, col_index_corrected,
   output_path <- output_base_path
 
   # Prepare and sort data for plotting
-  data$Lipid <- factor(data$Lipid, levels = unique(data$Lipid))
+  data$lipid <- factor(data$lipid, levels = unique(data$lipid))
 
   # Define common sizes for axis titles and plot title
   axis_title_size <- 13
   plot_title_size <- 10
 
   # Dynamic adjustment of the label size based on the number of bars (lipids)
-  num_bars <- length(unique(data$Lipid))
+  num_bars <- length(unique(data$lipid))
   label_size <- max(2, min(11, 50 / sqrt(num_bars))) # Adjusted dynamically
 
   # Generate plot for non-corrected p-values
-  p1 <- ggplot(data, aes(x = reorder(Lipid, .data[[test_name_non_corrected]]), y = .data[[test_name_non_corrected]])) +
+  p1 <- ggplot(data, aes(x = reorder(lipid, .data[[test_name_non_corrected]]), y = .data[[test_name_non_corrected]])) +
     geom_bar(stat = "identity", fill = "steelblue") +
     coord_flip() +
     geom_hline(yintercept = 0.05, color = "red", linetype = "solid") +
-    labs(y = "P-value", x = "Lipid", title = test_name_non_corrected) +
+    labs(y = "P-value", x = "lipid", title = test_name_non_corrected) +
     theme_minimal() +
     theme(
       axis.title.y = element_text(size = axis_title_size, face = "bold"),
@@ -2112,11 +2177,11 @@ generate_barplot <- function(data, col_index_non_corrected, col_index_corrected,
     )
 
   # Generate plot for corrected p-values
-  p2 <- ggplot(data, aes(x = reorder(Lipid, .data[[test_name_corrected]]), y = .data[[test_name_corrected]])) +
+  p2 <- ggplot(data, aes(x = reorder(lipid, .data[[test_name_corrected]]), y = .data[[test_name_corrected]])) +
     geom_bar(stat = "identity", fill = "darkgreen") +
     coord_flip() +
     geom_hline(yintercept = 0.05, color = "red", linetype = "solid") +
-    labs(y = "Corrected P-value", x = "Lipid", title = test_name_corrected) +
+    labs(y = "Corrected P-value", x = "lipid", title = test_name_corrected) +
     theme_minimal() +
     theme(
       axis.title.y = element_text(size = axis_title_size, face = "bold"),
