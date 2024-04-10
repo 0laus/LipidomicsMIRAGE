@@ -10,6 +10,7 @@ chunk_output_type: console
 ---
 
 **Packages**
+
 ```{r, warning=FALSE, message=FALSE, echo=FALSE}
 library(readxl) # reads Excel files
 library(dplyr) # to manipulate data
@@ -26,9 +27,13 @@ library(emmeans) # for p-values and confidence intervals
 library(lmerTest) # p-values for mixed models
 library(correlation) # to analyse data for correlations
 library(ComplexHeatmap); library(circlize) # to make complex heatmaps
+library(ggrepel) # to avoid overlapping labels
 ```
+
 # Project settings
+
 Cut offs and values to be used throughout the analysis
+
 ```{r}
 # Number of points above 0 needed for an analysis to take place. The number is the number of id's within class across all intervention groups.
 analysis_cutoff <- 15
@@ -36,10 +41,11 @@ analysis_cutoff <- 15
 LLOQ_discard_factor <- 3
 ```
 
-
 # Load and prepare data
+
 ## Lipidomics data
-Load data into long format and clean the data by replacing <0 with 0 and N/A with 0.
+
+Load data into long format and clean the data by replacing \<0 with 0 and N/A with 0.
 
 ```{r, message=FALSE}
 # Define the path to the Excel file
@@ -95,7 +101,9 @@ lipidomicsDF <- select(lipidomicsDF, -sheet)
 ```
 
 ### Identifiers, samples and PBIS
+
 **Load identifiers and sample weights** and merge with the data frame and split the pid into pre/post and id.
+
 ```{r}
 # path to file
 filePathIdentifiers <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/data-raw/Lipidomics Key and Weights Goodpaster KZB_identifiable.xlsx"
@@ -128,7 +136,9 @@ lipidomicsDF <- lipidomicsDF %>%
 ```
 
 ### Quantification limits
+
 Values are copied from the lipidomics Excel file, "2022Mar Goodpaster Results.xlsx"
+
 ```{r}
 detection_limits <- data.frame(
   lipidclasses = c("SPH", "AC", "SPM", "PG", "LPG", "PI", "LPI", "PS", "LPS", "PA", "PE", "LPE", "PC", "LPC", "1,3-DG", "1,2-DG", "Cer", "dhCer", "GluCer", "LacCer", "GalCer", "TAG"),
@@ -137,8 +147,8 @@ detection_limits <- data.frame(
 )
 ```
 
-Make column to denote if measurement is within (0), below LLOQ (1), above ULOQ (2) or above ULOQ * the defined discard factor (3).
-Values that are discarded are made Na.
+Make column to denote if measurement is within (0), below LLOQ (1), above ULOQ (2) or above ULOQ \* the defined discard factor (3). Values that are discarded are made Na.
+
 ```{r}
 limitFunction <- function(lipidomicsDF, detection_limits){
 # Initialize the 'within_threshold' column
@@ -174,29 +184,69 @@ return (lipidomicsDF)
 lipidomicsDF <- limitFunction(lipidomicsDF, detection_limits)
 ```
 
+### Ratios and saturation
+
 ### Normalization and transformation
+
 **Weight normalization**
+
 ```{r}
 lipidomicsDF$pmol_mg <- lipidomicsDF$pmol / lipidomicsDF$equiv_weight_extracted
 ```
-**Log transform**
-Log transform the weight normalized lipidomics data. 1 is added to all values to avoid zores
+
+**Add PE/PC ratio**
+
+```{r}
+add_ratio_lipidomics <- function (lipidomicsDF)
+{
+# Step 1: Filter for PE and PC lipid classes and summarize their pmol values
+sums_df <- lipidomicsDF %>%
+  filter(lipidClass %in% c("PE", "PC")) %>%
+  group_by(id, time, sampleNumber, group, wet_weight, lyphilized_weight, volume_of_homogenate_ul, equiv_weight_extracted, lipidClass) %>%
+  summarise(sum_pmol_mg = sum(pmol_mg), .groups = "drop_last")
+
+# Step 2: Pivot the data to wide format after summarization
+sums_wide <- sums_df %>%
+  pivot_wider(names_from = lipidClass, values_from = sum_pmol_mg)
+
+# Step 3: Calculate the PE/PC ratio
+ratios_df <- sums_wide %>%
+  mutate(lipidClass = "PE:PC ratio",
+         lipidComposition = NA_character_,  # Assuming character; adjust as needed
+         pmol = NA_real_,  # Set to NA; adjust type as needed
+         pmol_mg = PE / PC,
+         within_threshold = NA_real_) %>%  # Adjust type if needed
+  select(-PE, -PC)  # Remove intermediate PE and PC columns
+
+# Ensure matching column structure with the original dataframe
+# For columns not included in ratios_df, add them as NAs
+missing_cols <- setdiff(names(lipidomicsDF), names(ratios_df))
+for(col in missing_cols) {
+  ratios_df[[col]] <- NA
+}
+
+# Reorder columns to match the original dataframe exactly
+ratios_df <- ratios_df[names(lipidomicsDF)]
+
+# Step 4: Bind the rows to include PE:PC ratio ratios in the original dataframe
+lipidomicsDF <- bind_rows(lipidomicsDF, ratios_df)
+
+return(lipidomicsDF)
+}
+
+lipidomicsDF <- add_ratio_lipidomics(lipidomicsDF)
+```
+
+**Log transform** Log transform the weight normalized lipidomics data. 1 is added to all values to avoid zores
+
 ```{r}
 # Transform and add a small constant (+1) to avoid log(0)
 lipidomicsDF <- lipidomicsDF %>%
   mutate(pmol_mg_log = log(pmol_mg + 1))
 ```
 
-**Z-transformation**
-```{r}
-# Make column with Z-transformed data for each lipid composition within each lipid class
-lipidomicsDF <- lipidomicsDF %>%
-  group_by(lipidClass, lipidComposition) %>%
-  mutate(pmol_mg_znorm = scale(pmol_mg)) %>%
-  ungroup()
-```
-
 **Sort data**
+
 ```{r}
 # Sort the dataframe by 'id' and 'time'
 lipidomicsDF <- lipidomicsDF %>%
@@ -209,12 +259,13 @@ unique_combinations <- lipidomicsDF %>%
 ```
 
 **Define unique lipid classes**
+
 ```{r}
 unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
 ```
 
-
 ## Mirage data
+
 **Load from "FINAL MIRAGE DATASET.xlsx"**
 
 !!! DUPLICATE IDS: "MG023" and "MG019" both are duplicates that appear with same group as in id from Pittsburg and TRI. Assumption: All samples are from TRI if not specified otherwise. Therefore, the Excel file "FINAL MIRAGE DATASET.xlsx", sheet "Not Imputed-Clean" was changed to make the merge work. All changes are marked with red text.
@@ -257,53 +308,112 @@ names(mirage_data) <- new_col_names
 ```
 
 **Calculate additional rows**
+
 ```{r}
 mirage_data$tdee_kcal_24hr_ffm_pre <- mirage_data$tdee_kcal_24hr_pre / mirage_data$lean_mass_dxa_pre
+
+# Asses moderate to vigorous physical activity by combining minutes in moderate (mpa) with vigerous activity (vpa) 
+mirage_data$mvpa_mins_day_pre <- mirage_data$mpa_mins_day_pre + mirage_data$vpa_mins_day_pre
+mirage_data$mvpa_mins_day_post <- mirage_data$mpa_mins_day_post + mirage_data$vpa_mins_day_post
+
 ```
 
 ### Select variables & long format
-**pre-post variables**
-Define variables of interest for pre-post delta correlations against lipids.
+
+**pre-post variables** Define variables of interest for pre-post delta correlations against lipids.
+
 ```{r}
 # List with pre-post variables of interest
-mirage_ch_vars <- list(
+glycemicControl <- list(
   c("rd_ss1kg_ffm_insulin_pre", "rd_ss1kg_ffm_insulin_post"),
-  c("weight_pre", "weight_post"),
+  c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post"),
   c("vo2kg_ffm_pre", "vo2kg_ffm_post"),
-  c("thigh_imat_mri_pre", "thigh_imat_mri_post"),
-  c("at_pmax_p_mrs_pre", "at_pmax_p_mrs_post"),
+  c("hgb_a1c_pre", "hgb_a1c_post"),
   c("homair_pre", "homair_post"),
+  c("egp0kg_ffm_pre", "egp0kg_ffm_post"),
+  c("egpss1kg_ffm_pre", "egpss1kg_ffm_post"),
+  c("egpss2kg_ffm_pre", "egpss2kg_ffm_post"),
+  c("age_pre", "age_post")) # Age must appear last in this list!
+
+mitochondria <- list(
+  c("at_pmax_p_mrs_pre", "at_pmax_p_mrs_post"),
   c("pcr_p_mrs_pre", "pcr_p_mrs_post"),
-  c("thigh_muscle_mri_pre", "thigh_muscle_mri_post"),
-  c("fasting_insulin_m_iu_m_l_pre", "fasting_insulin_m_iu_m_l_post"),
-  c("age_pre", "age_post") # Age must appear last in this list!
-)
+  c("max_oxphos_pre", "max_oxphos_post"),
+  c("max_ets_pre", "max_ets_post"),
+  c("le_pre", "le_post"),
+  c("pe_pre", "pe_post"),
+  c("age_pre", "age_post")) # Age must appear last in this list!
+
+bodycomposition <- list(
+  c("leg_lean_mass_pre", "leg_lean_mass_post"),
+  c("fat_mass_dxa_pre", "fat_mass_dxa_post"),
+  c("lean_mass_dxa_pre", "lean_mass_dxa_post"),
+  c("ffm_dxa_pre", "ffm_dxa_post"),
+  c("thigh_sat_g_pre", "thigh_sat_g_post"),
+  c("thigh_imat_g_pre", "thigh_imat_g_post"),
+  c("percent_imat_pre", "percent_imat_post"),
+  c("thigh_muscle_g_pre", "thigh_muscle_g_post"),
+  c("abdomen_vat_g_pre", "abdomen_vat_g_post"),
+  c("age_pre", "age_post")) # Age must appear last in this list!
+
+blood <-  list(
+  c("vldl_pre", "vldl_post"),
+  c("ldl_pre", "ldl_post"),
+  c("hdl_pre", "hdl_post"),
+  c("cholesterol_pre", "cholesterol_post"),
+  c("triglycerides_pre", "triglycerides_post"),
+  c("plasma_ffabg_pre", "plasma_ffabg_post"),
+  c("age_pre", "age_post"))# Age must appear last in this list!
+  
+  physicalActivity <- list(
+  c("mvpa_mins_day_pre", "mvpa_mins_day_post"),
+  c("vo2abs_pre", "vo2abs_post"),
+  c("vo2kg_ffm_pre", "vo2kg_ffm_post"),
+  c("x4m_walk_pre", "x4m_walk_post"),
+  c("StepTest_Pre", "StepTest_Post"),
+  c("x1rm_pre", "x1rm_post"),
+  c("age_pre", "age_post")) # Age must appear last in this list!
+  
+  mirage_ch_vars <- list(
+    glycemicControl = glycemicControl,
+    mitochondria = mitochondria,
+    bodycomposition = bodycomposition,
+    blood = blood,
+    physicalActivity = physicalActivity
+  )
+  
+  
 ```
 
-**Cross-sectional variables**
-Define variables of interest to compare between all individuals at pre
+**Cross-sectional variables** Define variables of interest to compare between all individuals at pre
 
 ```{r}
+# Glycemic Control
+glycemicControl <- c("rd_ss1kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_pre", "vo2kg_ffm_pre", "hgb_a1c_pre", "homair_pre", "egp0kg_ffm_pre", "egpss1kg_ffm_pre", "egpss2kg_ffm_pre")
+
+# Mitochondria
+mitochondria <- c("at_pmax_p_mrs_pre", "pcr_p_mrs_pre", "max_oxphos_pre", "max_ets_pre", "le_pre", "pe_pre")
+
+bodycomposition <- c("leg_lean_mass_pre", "fat_mass_dxa_pre", "lean_mass_dxa_pre", "ffm_dxa_pre", "thigh_sat_g_pre", "thigh_imat_g_pre", "percent_imat_pre", "thigh_muscle_g_pre", "abdomen_vat_g_pre")
+
+# Blood
+blood <- c("vldl_pre", "ldl_pre", "hdl_pre", "cholesterol_pre", "triglycerides_pre", "plasma_ffabg_pre")
+
+# Physical Activity + Age
+physicalActivity <- c("mvpa_mins_day_pre", "vo2abs_pre", "vo2kg_ffm_pre", "x4m_walk_pre", "StepTest_Pre", "x1rm_pre", "age_pre")
+
+
+# Combining all the "_pre" variables into a single list for mirage_crossSectional_vars, excluding "age_pre" from all but the physicalActivity list
 mirage_crossSectional_vars <- list(
-  c(
-    "rd_ss1kg_ffm_insulin_pre",
-    "weight_pre",
-    "age_pre",
-    "vo2kg_ffm_pre",
-    "thigh_imat_mri_pre",
-    "at_pmax_p_mrs_pre",
-    "homair_pre",
-    "pcr_p_mrs_pre",
-    "thigh_muscle_mri_pre",
-    "max_oxphos_pre",
-    "tdee_kcal_24hr_ffm_pre",
-    "hgb_a1c_pre"
-  )
+  glycemicControl = glycemicControl,
+  mitochondria = mitochondria,
+  bodycomposition = bodycomposition,
+  blood = blood,
+  physicalActivity = physicalActivity
 )
 ```
 
-**Mirage long format**
-Convert Mirage dataset with selected variables into long format with selected Pre|Post varibles 
+**Mirage long format** Convert Mirage dataset with selected variables into long format with selected Pre\|Post varibles
 
 ```{r}
 # Flatten the list of column names into a single vector
@@ -329,13 +439,313 @@ mirage_data_long_ch <- mirage_data_long_ch %>%
   mutate(time = case_when(
     time == "pre" ~ "Pre",
     time == "post" ~ "Post",
-    TRUE ~ time # This line is a safety net; it keeps the original value if it's neither 'pre' nor 'post'
+    TRUE ~ time # Keeps the original value if it's neither 'pre' nor 'post'
   ))
 
 # Remove rows where all measurements are NA
 mirage_data_long_ch <- mirage_data_long_ch %>%
   group_by(id, time) %>%
   filter(!all(is.na(age)))
+```
+
+# Mirage pre-post analysis w plot
+
+```{r}
+endpoint_variable <- c("daily_steps_steps_24hr_pre", "daily_steps_steps_24hr_post")
+y_label <- expression("Steps per 24 hours")
+
+mirage_analysis_and_plot <- function(endpoint_variable, y_label)
+{
+# Turn MIRAGE data into long format to be able to plot data
+# Combine all variables of interest
+subset_variables <- c("id", "group", "gender", endpoint_variable)
+
+# Rename the endpoint variable to match the name in long format 
+endpoint_variable <- gsub("_pre", "", endpoint_variable[1])
+
+# Subset 'mirage_data' to include only the variables of interest
+mirage_subset <- mirage_data[, subset_variables]
+
+# Transform 'mirage_data_subset' to long format
+mirage_plot_long <- pivot_longer(
+  mirage_subset,
+  cols = -c(id, group, gender),  # exclude cols from the pivot
+  names_to = c(".value", "time"),
+  names_pattern = "(.+)_(pre|post)"
+)
+
+### Make a column called in_lipidomics to filter out values that are present in that dataset
+# Make id columns strings to be able to search
+mirage_plot_long$id <- as.character(mirage_plot_long$id)
+lipidomicsDF$id <- as.character(lipidomicsDF$id)
+
+# Create the new column 'in_lipidomics' based on 'id' existence in lipidomicsDF
+mirage_plot_long <- mirage_plot_long %>%
+  mutate(in_lipidomics = if_else(id %in% lipidomicsDF$id, TRUE, FALSE))
+
+
+# Adjust the 'time' column in 'mirage_data_long_ch' to match 'Pre' and 'Post'
+mirage_plot_long <- mirage_plot_long %>%
+  mutate(time = case_when(
+    time == "pre" ~ "Pre",
+    time == "post" ~ "Post",
+    TRUE ~ time # Keeps the original value if it's neither 'pre' nor 'post'
+  ))
+
+
+##### MIXED MODEL
+
+mirage_lmer <- function(modelData, endpoint_variable){
+# Writing out formula allows dynamic naming
+    model_formula <- as.formula(paste(
+      endpoint_variable,
+      "~ time * group +
+      (1 | id)"))
+
+      model <- lmer(model_formula,
+                    data = modelData,
+                    na.action = na.exclude)
+      
+      # Estimated marginal of means to get out slope and between groups statistics
+      emm <- emmeans(model, ~ time * group)
+
+      # Contrasts for differences in slopes between groups
+      model.slope.contrasts <- contrast(emm, method = "revpairwise", interaction = "pairwise", adjust = "none")
+
+      model.slope.contrasts.results <- summary(model.slope.contrasts)
+
+      # Add the new 'contrast' column and remove the original "time_pairwise" and "group_pairwise" columns
+      model.slope.contrasts.results <- model.slope.contrasts.results %>%
+        mutate(contrast = paste(time_pairwise, group_pairwise, sep = " : ")) %>%
+        select(contrast, estimate, SE, df, t.ratio, p.value)
+
+      # Pre, Post between group comparisons
+      prepost.contrasts <- pairs(emm, adjust = "none")
+
+      # Get results
+      prepost.contrasts.results <- summary(prepost.contrasts)
+
+      return(list(enpoint = as.character(endpoint_variable), slope_results = model.slope.contrasts.results, prepost_results = prepost.contrasts.results))
+}
+
+# Run function
+lmer_results.mirage <- mirage_lmer(mirage_plot_long, endpoint_variable)
+lmer_results.lipidomics <- mirage_lmer(mirage_plot_long[mirage_plot_long$in_lipidomics==TRUE,], endpoint_variable)
+
+##### PLOT DATA
+
+# Function to extract p-value based on contrast
+extract_p_value <- function(results, contrast_name) {
+  results$p.value[results$contrast == contrast_name]
+}
+
+# In lipidomics data
+p_value.hed <- extract_p_value(lmer_results.lipidomics$prepost_results, "Post HED - Pre HED")
+p_value.diwl <- extract_p_value(lmer_results.lipidomics$prepost_results, "Post DIWL - Pre DIWL")
+p_value.wlex <- extract_p_value(lmer_results.lipidomics$prepost_results, "Post WLEX - Pre WLEX")
+p_value_slope.hed_diwl <- extract_p_value(lmer_results.lipidomics$slope_results, "Post - Pre : DIWL - HED")
+p_value_slope.diwl_wlex <- extract_p_value(lmer_results.lipidomics$slope_results, "Post - Pre : DIWL - WLEX")
+p_value_slope.wlex_hed <- extract_p_value(lmer_results.lipidomics$slope_results, "Post - Pre : HED - WLEX")
+# For whole mirage data
+p_value.hed_mirage <- extract_p_value(lmer_results.mirage$prepost_results, "Post HED - Pre HED")
+p_value.diwl_mirage <- extract_p_value(lmer_results.mirage$prepost_results, "Post DIWL - Pre DIWL")
+p_value.wlex_mirage <- extract_p_value(lmer_results.mirage$prepost_results, "Post WLEX - Pre WLEX")
+p_value_slope.hed_diwl_mirage <- extract_p_value(lmer_results.mirage$slope_results, "Post - Pre : DIWL - HED")
+p_value_slope.diwl_wlex_mirage <- extract_p_value(lmer_results.mirage$slope_results, "Post - Pre : DIWL - WLEX")
+p_value_slope.wlex_hed_mirage <- extract_p_value(lmer_results.mirage$slope_results, "Post - Pre : HED - WLEX")
+
+
+# Calculate the count (n) for each group and time
+# lipidomics data
+n_hed_pre <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$in_lipidomics & mirage_plot_long$group == "HED" & mirage_plot_long$time == "Pre"]))
+n_hed_post <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$in_lipidomics & mirage_plot_long$group == "HED" & mirage_plot_long$time == "Post"]))
+n_diwl_pre <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$in_lipidomics & mirage_plot_long$group == "DIWL" & mirage_plot_long$time == "Pre"]))
+n_diwl_post <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$in_lipidomics & mirage_plot_long$group == "DIWL" & mirage_plot_long$time == "Post"]))
+n_wlex_pre <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$in_lipidomics & mirage_plot_long$group == "WLEX" & mirage_plot_long$time == "Pre"]))
+n_wlex_post <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$in_lipidomics & mirage_plot_long$group == "WLEX" & mirage_plot_long$time == "Post"]))
+
+# mirage data
+n_hed_pre_mirage <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$group == "HED" & mirage_plot_long$time == "Pre"]))
+n_hed_post_mirage <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$group == "HED" & mirage_plot_long$time == "Post"]))
+n_diwl_pre_mirage <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$group == "DIWL" & mirage_plot_long$time == "Pre"]))
+n_diwl_post_mirage <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$group == "DIWL" & mirage_plot_long$time == "Post"]))
+n_wlex_pre_mirage <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$group == "WLEX" & mirage_plot_long$time == "Pre"]))
+n_wlex_post_mirage <- sum(!is.na(mirage_plot_long[[endpoint_variable]][mirage_plot_long$group == "WLEX" & mirage_plot_long$time == "Post"]))
+
+  
+# Calculate both means for lipidomics ids and mirage ids
+mean_data <- mirage_plot_long %>%
+  group_by(group, time) %>%
+  summarise(
+    mean_lipidomics = mean(ifelse(in_lipidomics == TRUE, .data[[endpoint_variable]], NA), na.rm = TRUE),
+    mean_mirage = mean(.data[[endpoint_variable]], na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# Generate labels with original and corrected p-values including n counts
+annotation_hed <- paste0(
+  "HED pre (n=", n_hed_pre, ") vs post (n=", n_hed_post,
+  "), p = ", formatC(p_value.hed, format = "f", digits = 3), 
+  "\n MIRAGE: pre (n=", n_hed_pre_mirage, ") vs post (n=", n_hed_post_mirage,
+  "), p = ", formatC(p_value.hed_mirage, format = "f", digits = 3))
+
+annotation_diwl <- paste0(
+  "DIWL pre (n=", n_diwl_pre, ") vs post (n=", n_diwl_post, 
+  "), p = ", formatC(p_value.diwl, format = "f", digits = 3), 
+  "\n MIRAGE: pre (n=", n_diwl_pre_mirage, ") vs post (n=", n_diwl_post_mirage, 
+  "), p = ", formatC(p_value.diwl_mirage, format = "f", digits = 3))
+
+annotation_wlex <- paste0(
+  "WLEX pre (n=", n_wlex_pre, ") vs post (n=", n_wlex_post, 
+  "), p = ", formatC(p_value.wlex, format = "f", digits = 3), 
+  "\n MIRAGE: pre (n=", n_wlex_pre_mirage, ") vs post (n=", n_wlex_post_mirage, 
+  "), p = ", formatC(p_value.wlex_mirage, format = "f", digits = 3))
+
+
+annotation_pvals_slope <- paste0(
+  "Slope p-values: HED vs DIWL, p = ", formatC(p_value_slope.hed_diwl, format = "f", digits = 3),
+  "       |    HED vs WLEX, p = ", formatC(p_value_slope.wlex_hed, format = "f", digits = 3),
+  "       |    DIWL vs WLEX, p = ", formatC(p_value_slope.diwl_wlex, format = "f", digits = 3),
+  "\n MIRAGE:         HED vs DIWL, p = ", formatC(p_value_slope.hed_diwl_mirage, format = "f", digits = 3),
+  "       |    HED vs WLEX, p = ", formatC(p_value_slope.wlex_hed_mirage, format = "f", digits = 3),
+  "       |    DIWL vs WLEX, p = ", formatC(p_value_slope.diwl_wlex_mirage, format = "f", digits = 3)
+)
+
+# Make the plot
+plot <- ggplot(mirage_plot_long, aes(
+  x = factor(interaction(group, time, sep = " "),
+    levels = c(
+      "HED Pre",
+      "HED Post", 
+      "DIWL Pre", 
+      "DIWL Post", 
+      "WLEX Pre", 
+      "WLEX Post")),
+  y = !!sym(endpoint_variable), group = interaction(id, group))) +
+  
+  # Lines for all, colored conditionally, alpha adjusted directly
+  geom_line(aes(color = if_else(in_lipidomics == TRUE, "Lipidomics", "MIRAGE"), 
+                alpha = if_else(in_lipidomics == TRUE, 1, 0.7)), 
+            position = position_nudge(x = 0.03)) +
+  
+  # Points for all, colored conditionally, alpha adjusted directly
+  geom_point(aes(color = if_else(in_lipidomics == TRUE, "Lipidomics", "MIRAGE"), 
+                 alpha = if_else(in_lipidomics == TRUE, 1, 0.7)),  # Adjusted alpha for visibility
+             position = position_nudge(x = 0.03)) +
+  
+  geom_boxplot(data = mirage_plot_long[mirage_plot_long$in_lipidomics == TRUE, ],
+               aes(group = interaction(group, time)),
+               width = 0.3, alpha = 0.2, outlier.shape = NA,
+               position = position_dodge(width = 0.75), color = "black") +
+  
+  # Mean line lipidomics
+  geom_line(data = mean_data, aes(x = interaction(group, time, sep = " "), y = mean_lipidomics, group = group), 
+            color = "black", linewidth = 1, position = position_nudge(x = 0.03)) +
+  
+  # Mean line MIRAGE
+  geom_line(data = mean_data, aes(x = interaction(group, time, sep = " "), y = mean_mirage, group = group), 
+            color = "grey", alpha = 0.8, linewidth = 1, position = position_nudge(x = 0.03)) +
+  
+  scale_color_manual(values = c("Lipidomics" = "black", "MIRAGE" = "darkgrey"), name = "Data") +
+  
+  labs(
+    title = paste(endpoint_variable, "(p-vals not adj.)"),
+    subtitle = annotation_pvals_slope,
+    y = y_label,
+    x = ""
+  ) +
+  guides(alpha = FALSE) + # Hide the alpha legend
+  # Insert P-values pre post
+ annotate("text", x = 1.5, y = max(mirage_plot_long[[endpoint_variable]], na.rm = TRUE) * 1.05,
+           label = annotation_hed, size = 2.1, hjust = 0.5) +
+  annotate("text", x = 3.5, y = max(mirage_plot_long[[endpoint_variable]], na.rm = TRUE) * 1.05,
+           label = annotation_diwl, size = 2.1, hjust = 0.5) +
+  annotate("text", x = 5.5, y = max(mirage_plot_long[[endpoint_variable]], na.rm = TRUE) * 1.05,
+           label = annotation_wlex, size = 2.1, hjust = 0.5) +
+  theme_minimal(base_size = 12) + # Start with a minimal theme
+  theme(
+    axis.title.x = element_blank(), 
+    axis.text.x = element_text(angle = 45, hjust = 1), 
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), # Bold and centered title
+    plot.subtitle = element_text(hjust = 0.5, size = 8), # Smaller and centered subtitle
+    legend.text = element_text(size = 6),
+    legend.title = element_text(size = 6, hjust = 0.5), 
+    panel.grid.major.x = element_blank(), 
+    panel.grid.minor.x = element_blank(),
+    plot.caption = element_text(size = 8)
+  )
+
+# Print the plot
+print(plot)
+
+  # Define the filename and save the plot
+  filename <- paste0(
+    "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/mirage/",
+    endpoint_variable, ".jpg")
+  
+  ggsave(filename, plot = plot, device = "jpeg", width = 8, height = 6, dpi = 300)
+  
+  }
+
+
+
+### Run function
+endpoint_variable <- c("mpa_mins_day_pre", "mpa_mins_day_post")
+y_label <- expression("mins/day")
+
+mirage_analysis_and_plot(endpoint_variable=endpoint_variable, y_label=y_label)
+```
+
+## Table 1 statistics
+
+```{r}
+# Filter mirage subjects included in this study
+mirage_included <- mirage_data %>%
+    filter(id %in% lipidomicsDF$id)
+
+# Weight loss
+summary(mirage_included[mirage_included$group=="WLEX","weight_post"] - mirage_included[mirage_included$group=="WLEX","weight_pre"])
+
+# SD
+sd(mirage_included[mirage_included$group == "WLEX",]$weight_post - 
+   mirage_included[mirage_included$group == "WLEX",]$weight_pre)
+
+#DIWL
+summary(mirage_included[mirage_included$group=="DIWL","weight_post"] - mirage_included[mirage_included$group=="DIWL","weight_pre"])
+
+# SD
+sd(mirage_included[mirage_included$group == "DIWL",]$weight_post - 
+   mirage_included[mirage_included$group == "DIWL",]$weight_pre)
+
+#HED
+summary(mirage_included[mirage_included$group=="HED","weight_post"] - mirage_included[mirage_included$group=="HED","weight_pre"])
+
+# SD
+sd(mirage_included[mirage_included$group == "HED",]$weight_post - 
+   mirage_included[mirage_included$group == "HED",]$weight_pre)
+
+
+### Physical acitivity
+summary(mirage_included[mirage_included$group=="WLEX","daily_steps_steps_24hr_post"] - mirage_included[mirage_included$group=="WLEX","daily_steps_steps_24hr_pre"], na.rm = TRUE)
+
+# SD
+sd(mirage_included[mirage_included$group == "WLEX",]$daily_steps_steps_24hr_post - 
+   mirage_included[mirage_included$group == "WLEX",]$daily_steps_steps_24hr_pre, na.rm = TRUE)
+
+#DIWL
+summary(mirage_included[mirage_included$group=="DIWL","daily_steps_steps_24hr_post"] - mirage_included[mirage_included$group=="DIWL","daily_steps_steps_24hr_pre"], na.rm = TRUE)
+
+# SD
+sd(mirage_included[mirage_included$group == "DIWL",]$daily_steps_steps_24hr_post - 
+   mirage_included[mirage_included$group == "DIWL",]$daily_steps_steps_24hr_pre, na.rm = TRUE)
+
+#HED
+summary(mirage_included[mirage_included$group=="HED","daily_steps_steps_24hr_post"] - mirage_included[mirage_included$group=="HED","daily_steps_steps_24hr_pre"], na.rm = TRUE)
+
+# SD
+sd(mirage_included[mirage_included$group == "HED",]$daily_steps_steps_24hr_post - 
+   mirage_included[mirage_included$group == "HED",]$daily_steps_steps_24hr_pre, na.rm = TRUE)
 ```
 
 # Analysis based on changes
@@ -434,6 +844,7 @@ lipidomics_wide <- lipidomics_wide %>%
 ```
 
 ## Statistics (function)
+
 Function to get correlation between changes of defined parameters
 
 ```{r}
@@ -788,10 +1199,12 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
-## Heat map on p-values
+## Heatmap & vulcano plot
+
+### Common data preparation
+
 ```{r}
 #Gather the Spearman p-value columns
-
 # For composition data
 long_format_p_adj_comp <- correlation_values_ch_composition %>%
   select(lipid, test_against, spearman_p_all, spearman_p_HED, spearman_p_DIWL, spearman_p_WLEX) %>%
@@ -805,15 +1218,18 @@ long_format_p_adj_class <- correlation_values_ch_class %>%
 # Combine both into one data frame
 long_format_p_adj.non <- rbind(long_format_p_adj_comp, long_format_p_adj_class)
 
-
+#Gather the Spearman rho columns
+# For composition
 long_format_cor_comp <- correlation_values_ch_composition %>%
   select(lipid, test_against, spearman_rho_all, spearman_rho_HED, spearman_rho_DIWL, spearman_rho_WLEX) %>%
   pivot_longer(cols = starts_with("spearman_rho"), names_to = "spearman_type", values_to = "rho_value")
 
+# For class
 long_format_cor_class <- correlation_values_ch_class %>%
   select(lipid, test_against, spearman_rho_all, spearman_rho_HED, spearman_rho_DIWL, spearman_rho_WLEX) %>%
   pivot_longer(cols = starts_with("spearman_rho"), names_to = "spearman_type", values_to = "rho_value")
 
+# Combine composition and class into one df
 long_format_cor <- rbind(long_format_cor_comp, long_format_cor_class)
 
 # Remove Na rows based on NA in correlation
@@ -827,24 +1243,95 @@ long_format_p_adj.non <- long_format_p_adj.non %>%
 
 # Adjust p-values by group
 long_format_p_adj.gr <- long_format_p_adj.non %>%
-  group_by(test_against) %>%
-  mutate(p_value = p.adjust(p_value, method = "BH")) %>%
+  group_by(test_against, spearman_type) %>%
+  mutate(p_value = p.adjust(p_value, method = "BH"))%>%
   ungroup()
 
 # adjust p-values by all columns
 long_format_p_adj.all <- long_format_p_adj.non %>%
   mutate(p_value = p.adjust(p_value, method = "BH"))
+```
+
+### Vulcano plot
+
+```{r}
+vulcano_changes <- function(){
+### Join p-values adjusted for all lipid species and join with the rho values
+# Adjust names in the spearman_type to facilitate merge
+# p-val df
+vulc.pvals <- long_format_p_adj.gr
+vulc.pvals$spearman_type <- gsub("spearman_p_", "", vulc.pvals$spearman_type)
+
+# Correlation df
+vulc.cor <- long_format_cor
+vulc.cor$spearman_type <- gsub("spearman_rho_", "", vulc.cor$spearman_type)
+
+# make into single dataframe
+vulc_data <- vulc.cor %>%
+  left_join(vulc.pvals, by = c("lipid", "test_against", "spearman_type"))
+
+# Capitalize all
+vulc_data$spearman_type <- gsub("all", "ALL", vulc.cor$spearman_type)
+
+# Make a identifier column that combines lipid, test-against and Spearman_type
+vulc_data$identifier <- paste0(vulc_data$lipid, " ~ ", vulc_data$test_against, " | ", vulc_data$spearman_type)
+
+### Plot settings
+# Set threshold for when to plot label
+threshold_rho <- 0.2
+
+# Assuming unique_tests has been defined as before
+unique_tests <- sort(unique(vulc_data$test_against))
 
 
+# Generate a palette of evenly spaced colors across the HCL (Hue, Chroma, Luminance) color space
+base_colors <- grDevices::hcl(h = seq(15, 375, length = length(unique_tests) + 1),
+                              c = 100, 
+                              l = 65)[1:length(unique_tests)]
+
+# Assign each test to a color
+colors_for_tests <- setNames(base_colors, unique_tests)
+
+
+### Create plot
+vulc_plot <- ggplot(vulc_data, aes(x = rho_value, y = -log10(p_value))) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.2) +
+  geom_point(aes(color = test_against, alpha = p_value < 0.05)) +
+  scale_color_manual(values = colors_for_tests) +
+  scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.12)) + # TRUE for significant, FALSE for not
+  geom_text_repel(aes(label = ifelse(p_value < 0.05 & abs(rho_value) > threshold_rho, identifier, "")),
+                  box.padding = 0.35, point.padding = 0.5,
+                  size = 3, segment.color = 'grey50') +
+  theme_minimal() +
+  labs(title = "Correlation between changes in lipids and changes in clinical endpoints", x = "Spearman rho", y = "-log10 P-value") +
+  xlim(-1,1) +
+  guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) # Hide the alpha legend and fix the color legend
+
+## Display the plot
+#print(vulc_plot)
+
+# Save the plot
+ggsave("/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/correlations in changes/vulcano/volcano.jpg", plot = vulc_plot, width = 12, height = 8, dpi = 400)
+}
+
+# Run function
+vulcano_changes()
+```
+
+### Heatmap
+
+```{r}
 # Group lipidclasses to make multiple, clean heatmaps
+# Define lipid groups
 lipids_groups <- list(
-  gr_tag_ac = c("TAG", "AC"),  # Glycerolipids and Acyl carnitines
-  gr_dg = c("1,2-DG", "1,3-DG"),  # Diglycerides
+  gr_tag = c("TAG"),  # Triacylglycerols
+  gr_dg_ac = c("1,2-DG", "1,3-DG", "AC"),  # Diglycerides and Acyl carnitines
   gr_pc = c("PC"),  # Phosphatidylcholines
-  gr_pa_pe = c("PA", "PE"),  # Phosphatidic acid and Phosphatidylethanolamines
-  gr_pg_pi_ps = c("PG", "PI", "PS"),  # Phosphatidylglycerols, Phosphatidylinositols, Phosphatidylserines
-  gr_cer_spm_sph = c("SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingomyelins, Sphingosines, Ceramides and derivatives
-  gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS")  # Lysophospholipids
+  gr_pe = c("PE"),  # Phosphatidylethanolamines
+  gr_sphingolipids = c("SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingolipids: Sphingomyelins, Sphingosines, Ceramides and derivatives
+  gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS"),  # Lysophospholipids
+  gr_pa_ps = c("PA", "PS"),  # Group combining Phosphatidic acids and Phosphatidylserines
+  gr_pg_pi = c("PG", "PI")  # Group combining Phosphatidylglycerols and Phosphatidylinositols
 )
 
 
@@ -868,13 +1355,13 @@ long_format_p_adj_groups.all <- lapply(lipids_groups, filter_lipid_group_base, d
 long_format_corr_groups <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_cor)
 
 
-# Function to create 'unique_test_against' column
+# Function to create 'unique_test_against' column for p-value df
 mutate_unique_column_p <- function(data_frame) {
   data_frame %>%
     mutate(unique_test_against = paste0(sub("spearman_p_", "", spearman_type), "_", test_against))
 }
 
-# Adjust the function for correlation data frames if necessary
+# Adjust the function for correlation df
 mutate_unique_column_corr <- function(data_frame) {
   data_frame %>%
     mutate(unique_test_against = paste0(sub("spearman_rho_", "", spearman_type), "_", test_against))
@@ -964,7 +1451,7 @@ colnames(hm_matrix) <- sapply(strsplit(colnames(hm_matrix), "_", fixed = TRUE), 
           col = colorMap, # Use provided color map
           rect_gp = gpar(col = "white", lwd = 0.5), # Make space between each square
           row_names_side = "left", # Position of row labels
-          row_names_gp = gpar(fontsize = 7), # Change font size of row labels
+          row_names_gp = gpar(fontsize = 9), # Change font size of row labels
           
           column_split = rep(1:(ncol(hm_matrix) / 4), each = 4), # Splits the columns and names them
           column_title = colTitles, # Custom titles for each split
@@ -1022,8 +1509,8 @@ dev.off()
 
 ```
 
-
 ## Plot p-values sorted
+
 ```{r}
 # BH correct p-values
 # Name the columns that should be adjusted
@@ -1145,7 +1632,6 @@ for (i in 1:nrow(plot_nonadj_vs_adj)) {
   generate_barplot_ch(correlation_values_ch_composition, plot_nonadj_vs_adj$original[i], plot_nonadj_vs_adj$corrected[i], output_base_path, dataframe_name_comp)
 }
 ```
-
 
 # Cross sectional analysis on pre
 
@@ -1524,8 +2010,75 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
+## Vulcano
+
+```{r}
+vulcano_crossSection <- function(){
+# Combine class and composition data
+correlation_results_crossSection_class_and_comp <- rbind(correlation_results_crossSection_composition, correlation_results_crossSection_class)
+
+# Remove NA rows
+correlation_results_crossSection_class_and_comp <- correlation_results_crossSection_class_and_comp[!is.na(correlation_results_crossSection_class_and_comp$spearman_rho_all), ]
+
+# Select columns: Rho and p-value
+vulc_data_crossSection <- correlation_results_crossSection_class_and_comp %>% 
+  select("lipid", "test_against", "spearman_rho_all", "spearman_p_all")
+  
+# Adjust the p-value column based test_against.
+vulc_data_crossSection <- vulc_data_crossSection %>%
+    group_by(test_against) %>%
+    mutate(across("spearman_p_all", ~ p.adjust(.x, method = "BH"), .names = "p_value")) %>%
+    ungroup()
+
+# Make a identifier column that combines lipid and test_against
+vulc_data_crossSection$identifier <- paste0(vulc_data_crossSection$lipid, " ~ ", vulc_data_crossSection$test_against)
+
+
+### Plot settings
+# Set threshold for when to plot label
+threshold_rho <- 0.2
+
+# Assuming unique_tests has been defined as before
+unique_tests <- sort(unique(vulc_data_crossSection$test_against))
+
+
+# Generate a palette of evenly spaced colors across the HCL (Hue, Chroma, Luminance) color space
+base_colors <- grDevices::hcl(h = seq(15, 375, length = length(unique_tests) + 1),
+                              c = 100, 
+                              l = 65)[1:length(unique_tests)]
+
+# Assign each test to a color
+colors_for_tests <- setNames(base_colors, unique_tests)
+
+### Create plot
+vulc_plot <- ggplot(vulc_data_crossSection, aes(x = spearman_rho_all, y = -log10(p_value))) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", size = 0.2) +
+  geom_point(aes(color = test_against, alpha = p_value < 0.05)) +
+  scale_color_manual(values = colors_for_tests) +
+  scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.12), guide = FALSE) + # TRUE for significant, FALSE for not
+  geom_text_repel(aes(label = ifelse(p_value < 0.06 & abs(spearman_rho_all) > threshold_rho, identifier, "")),
+                  box.padding = .3, point.padding = .3,
+                  size = 3, segment.color = 'grey50') +
+  theme_minimal() +
+  xlim(-1,1)
+  labs(title = "Correlation between lipids and clinical endpoints at baseline", x = "Spearman rho", y = "-log10 P-value") +
+  guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) # Hide the alpha legend and fix the color legend
+
+## Display the plot
+print(vulc_plot)
+
+# Save the plot
+ggsave("/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/cross section/vulcano/volcano_plot.png", plot = vulc_plot, width = 12, height = 8, dpi = 300)
+}
+
+# Run function
+vulcano_crossSection()
+```
+
 ## Adjust & plot p-values
+
 **Correct p-values based on Bejamini-Hochberg**
+
 ```{r}
 # BH correct p-values
 # Name the columns that should be adjusted
@@ -1546,7 +2099,7 @@ adjust_p_values_within_group <- function(data, cols_to_adjust) {
 # Composition and class
 # Combine class and composition
 correlation_results_crossSection_class_and_comp <- rbind(correlation_results_crossSection_composition, correlation_results_crossSection_class)
-# Rund adjustment
+# Run adjustment
 correlation_results_crossSection_class_and_comp <-
   adjust_p_values_within_group(correlation_results_crossSection_class_and_comp, cols_to_adjust)
 
@@ -1668,8 +2221,8 @@ for (i in 1:nrow(plot_nonadj_vs_adj)) {
 # Pre-post group changes for lipids
 
 ## Mixed models
-Insulin sensitivity. Original data was analyzed by one-way ANOVA. So this would be to double check results
-mixed model for pre-post changes for every lipid composition within all lipid classes and for every lipid class.
+
+Insulin sensitivity. Original data was analyzed by one-way ANOVA. So this would be to double check results mixed model for pre-post changes for every lipid composition within all lipid classes and for every lipid class.
 
 ```{r}
 # Set the max number of observations that the emmeans package will handle. Lower number shorter computation times, larger number, more precise CI and p-value estimates
@@ -1713,7 +2266,8 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
   if (!is.null(lipidcomposition) || length(unique(data_to_model$lipidComposition)) <= 1) {
     model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id)"))
   } else {
-    model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id) + (1 | lipidComposition)"))
+    model_formula <- as.formula(paste(response_var, "~ time * group +
+                                      (1 | id) + (1 + time | lipidComposition)"))
   }
 
   # Try-catch block for model fitting
@@ -1758,14 +2312,17 @@ result.lipid.pre_post.class_comp <- pmap(
 # Naming the results list elements
 names(result.lipid.pre_post.class_comp) <- paste(unique_combinations$lipidClass, unique_combinations$lipidComposition, sep = "_")
 
-# Use map to iterate over lipid classes and use z-normalized data
+# Use map to iterate over lipid classes
 result.lipid.pre_post.class <- map(unique_lipid_classes, ~ mixedmodel_pre_post(lipidomicsDF, "pmol_mg", .x))
 
 # Naming the results list
 names(result.lipid.pre_post.class) <- unique_lipid_classes
 ```
 
+## Prepare data
+
 Sort, adjust by Benjamini-Hochberg for lipid composition within lipid class
+
 ```{r}
 prepare_lipid_data_for_plotting <- function(result_data) {
   pvals_df <- data.frame()
@@ -1877,38 +2434,28 @@ est_and_p_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.cl
 est_and_p_pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class)
 ```
 
-## Heatmap
-```{r}
+## Heatmap & vulcano plot
 
+### Prepare data
+
+```{r}
 # Assuming your list is named list_df
 pvals_df <- est_and_p_lipid_class_and_comp$p.vals
 estimates_df <- est_and_p_lipid_class_and_comp$estimates
 
-# Set 'lipid' as row names
-rownames(pvals_df) <- pvals_df$lipid
-rownames(estimates_df) <- estimates_df$lipid
-
-# Remove the 'lipid' column
-pvals_df <- pvals_df[ , !(names(pvals_df) %in% c("lipid"))]
-estimates_df <- estimates_df[ , !(names(estimates_df) %in% c("lipid"))]
 
 # Select the specified columns for hm_data.p-vals matrix
-hm_data_pvals <- pvals_df[ , c("Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
+pvals_df <- pvals_df[ , c("lipid", "Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
                                "Pre WLEX - Post WLEX (corrected)", "Pre - Post : HED - DIWL (corrected)",
                                "Pre - Post : HED - WLEX (corrected)", "Pre - Post : DIWL - WLEX (corrected)")]
 
-
-# Select the specified columns for hm_data.estimates matrix
-hm_data_estimates <- estimates_df[ , c("Pre HED - Post HED", "Pre DIWL - Post DIWL", 
-                                       "Pre WLEX - Post WLEX", "Pre - Post : HED - DIWL",
-                                       "Pre - Post : HED - WLEX", "Pre - Post : DIWL - WLEX")]
 
 ### Calculate log2 change
 # Composition
 log2fold_ch_comp <- lipidomicsDF %>%
   group_by(lipidClass, lipidComposition, group) %>%
   summarize(
-    log2FoldChange = log2(mean(pmol_mg[time == "Post"], na.rm = TRUE) / 
+    log2fCh = log2(mean(pmol_mg[time == "Post"], na.rm = TRUE) / 
                           mean(pmol_mg[time == "Pre"], na.rm = TRUE)),
     .groups = "drop"
   )
@@ -1917,12 +2464,12 @@ log2fold_ch_comp <- lipidomicsDF %>%
 log2fold_ch_class <- lipidomicsDF %>%
   group_by(lipidClass, group) %>%
   summarize(
-    log2FoldChange = log2(mean(pmol_mg[time == "Post"], na.rm = TRUE) / 
+    log2fCh = log2(mean(pmol_mg[time == "Post"], na.rm = TRUE) / 
                           mean(pmol_mg[time == "Pre"], na.rm = TRUE)),
     .groups = "drop"
   )
 
-### Make names to match lipid
+# Make names to match lipid
 # Composition
 log2fold_ch_comp <- log2fold_ch_comp %>%
   mutate(lipid = paste(lipidClass, lipidComposition, sep = "_")) %>%
@@ -1932,162 +2479,347 @@ log2fold_ch_comp <- log2fold_ch_comp %>%
 log2fold_ch_class <- log2fold_ch_class %>%
   rename(lipid = lipidClass)
 
+# Combine lipid composition and lipid class data
+log2fold_ch <- rbind(log2fold_ch_class, log2fold_ch_comp)
+
 # Rename col names to match the ones on the DF
+log2fold_ch <- log2fold_ch %>%
+  mutate(group = case_when(
+    group == "HED"  ~ "Pre HED - Post HED",
+    group == "DIWL" ~ "Pre DIWL - Post DIWL",
+    group == "WLEX" ~ "Pre WLEX - Post WLEX",
+    TRUE ~ group  # Keeps the original value if none of the above conditions are met
+  ))
 
-HED vs HED etc.
+### Replace the model change values with the log2change
+# Reshape estimates_df from wide to long format to make replacement
+estimates_long <- estimates_df %>%
+  pivot_longer(
+    cols = c("Pre HED - Post HED", "Pre DIWL - Post DIWL", "Pre WLEX - Post WLEX"),
+    names_to = "group",
+    values_to = "value"
+  )
+# perform replacement based on lipid and group
+estimates_long_log2ch <- estimates_long %>%
+  left_join(log2fold_ch, by = c("lipid", "group")) %>%
+  mutate(value = if_else(!is.na(log2fCh), log2fCh, value)) %>%
+  select(-log2fCh)
 
-### Replace changes based on log2change values
+# pivot back to wide format
+estimates_df_log2ch <- estimates_long_log2ch %>%
+  pivot_wider(
+    names_from = group,
+    values_from = value
+  )
 
-### SLOPE
-### Calculate means for which to normalise slopes
+### Slope: Relative changes
+# Calculate the mean at time Pre for every lipidComposition within lipidClass and for lipidClass across all groups to use for normalization
+lipidomicsDF <- lipidomicsDF %>%
+  # First, add the mean for composition + class
+  group_by(lipidComposition, lipidClass) %>%
+  mutate(pmol_mg_pre_mean_comp = ifelse(time == "Pre", mean(pmol_mg[time == "Pre"], na.rm = TRUE), NA)) %>%
+  ungroup() %>%
+  # Then, add the mean for class only
+  group_by(lipidClass) %>%
+  mutate(pmol_mg_pre_mean_class = ifelse(time == "Pre", mean(pmol_mg[time == "Pre"], na.rm = TRUE), NA)) %>%
+  ungroup()
 
-### Normalise slopes in the data frame
+# Calculate absolute pre-post changes
+# Composition
+slope_norm_ch_comp <- lipidomicsDF %>%
+  group_by(lipidClass, lipidComposition, group) %>%
+  summarize(
+    norm_ch = (mean(pmol_mg[time == "Post"], na.rm = TRUE) - 
+      mean(pmol_mg[time == "Pre"], na.rm = TRUE)) /
+      mean(pmol_mg_pre_mean_comp[time == "Pre"], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Class
+slope_norm_ch_class <- lipidomicsDF %>%
+  group_by(lipidClass, group) %>%
+  summarize(
+    norm_ch = (mean(pmol_mg[time == "Post"], na.rm = TRUE) - 
+      mean(pmol_mg[time == "Pre"], na.rm = TRUE)) / 
+      mean(pmol_mg_pre_mean_class[time == "Pre"], na.rm = TRUE),
+    .groups = "drop"
+  )
 
 
+# Make single lipid name for later matching
+# Composition
+slope_norm_ch_comp <- slope_norm_ch_comp %>%
+  mutate(lipid = paste(lipidClass, lipidComposition, sep = "_")) %>%
+  select(-lipidComposition, -lipidClass)
 
-# Convert to matrix
-# p-vals
-hm_data_pvals_matrix <- as.matrix(hm_data_pvals)
-# Estimates
-hm_data_estimates_matrix <- as.matrix(hm_data_estimates)
+# Class
+slope_norm_ch_class <- slope_norm_ch_class %>%
+  rename(lipid = lipidClass)
 
-# Group lipidclasses to make multiple, clean heatmaps
+# Combine lipid composition and lipid class data
+slope_norm_ch <- rbind(slope_norm_ch_class, slope_norm_ch_comp)
+
+# Spread the data for each group to be a separate column
+slope_norm_ch_wide <- slope_norm_ch %>%
+  pivot_wider(names_from = group, values_from = norm_ch)
+
+# Calculate the difference between slope changes and make pct.
+# This makes the values differences in "percentage points"
+slope_ch_pp <- slope_norm_ch_wide %>%
+  mutate(`Pre - Post : HED - WLEX` = (WLEX - HED)*100,
+         `Pre - Post : HED - DIWL` = (DIWL - HED)*100,
+         `Pre - Post : DIWL - WLEX` = (WLEX - DIWL)*100)
+
+# Remove the cols with differences between pre and post
+slope_ch_pp <- slope_ch_pp %>%
+  select(-WLEX, -HED, -DIWL)
+
+# Replace slope values in the estimates data frame
+# Join the dataframes based on 'lipid' to align rows
+joined_df <- estimates_df_log2ch %>%
+  left_join(slope_ch_pp, by = "lipid", suffix = c("", ".normch"))
+
+# Replace values in the original columns with values from the joined columns
+estimates_df_plotData <- joined_df %>%
+  mutate(`Pre - Post : HED - DIWL` = `Pre - Post : HED - DIWL.normch`,
+         `Pre - Post : HED - WLEX` = `Pre - Post : HED - WLEX.normch`,
+         `Pre - Post : DIWL - WLEX` = `Pre - Post : DIWL - WLEX.normch`) %>%
+  select(-ends_with(".normch"))
+
+
+# Convert tibble to dataframe for later naming
+estimates_df_plotData <- as.data.frame(estimates_df_plotData)
+```
+
+### Vulcano
+
+```{r}
+# Turn into two dataframes:
+# First: Slope, test_against
+# Selecting the relevant columns for transformation
+estimates_df_slope <- estimates_df_plotData %>%
+  select(lipid, `Pre - Post : HED - DIWL`, `Pre - Post : HED - WLEX`, `Pre - Post : DIWL - WLEX`)
+
+# Transforming into long format
+vulc_slope <- estimates_df_slope %>%
+  pivot_longer(
+    cols = -lipid, # Exclude the 'lipid' column from the reshaping process
+    names_to = "test_against", # New column for the original column names
+    values_to = "ch_pp" # New column for the values from the reshaped columns
+  )
+
+# Second: Pre/post, test_against, p_value
+# Selecting the relevant columns for transformation
+estimates_df_prePost <- estimates_df_plotData %>%
+  select(lipid, `Pre HED - Post HED`, `Pre DIWL - Post DIWL`, `Pre WLEX - Post WLEX`)
+
+# Transforming into long format
+vulc_prePost <- estimates_df_prePost %>%
+  pivot_longer(
+    cols = -lipid, # Exclude the 'lipid' column from the reshaping process
+    names_to = "test_against", # New column for the original column names
+    values_to = "log2foldch" # New column for the values from the reshaped columns
+  )
+
+## Add p-values
+# Adjust the names in pvals_df to match those in vulc_slope and vulc_prePost
+# First copy pvals_df to not alter
+pvals_df_mod <- pvals_df
+# then change names
+names(pvals_df_mod) <- sub(" \\(corrected\\)", "", names(pvals_df))
+
+# Transform pvals_df into long format
+pvals_long <- pvals_df_mod %>%
+  pivot_longer(
+    cols = -lipid, # Exclude 'lipid'
+    names_to = "test_against", # New column for the original column names
+    values_to = "p_value" # New column for the p-values
+  )
+
+# Join p-values to the dataframes to plot
+# Joining p-values to vulc_prePost
+vulc_prePost <- left_join(vulc_prePost, pvals_long, by = c("lipid", "test_against"))
+
+# Joining p-values to vulc_slope
+vulc_slope <- left_join(vulc_slope, pvals_long, by = c("lipid", "test_against"))
+
+### Make identifier columns based on lipid name and test_against 
+# Adding 'identifier' column to vulc_prePost
+vulc_prePost <- vulc_prePost %>%
+  mutate(identifier = paste(lipid, test_against, sep = " ~ "))
+
+# Adding 'identifier' column to vulc_slope
+vulc_slope <- vulc_slope %>%
+  mutate(identifier = paste(lipid, test_against, sep = " ~ "))
+```
+
+#### Slope
+
+```{r}
+# Set threshold for when to plot label
+threshold_rho <- 0.2
+
+# Assuming unique_tests has been defined as before
+unique_tests <- sort(unique(vulc_slope$test_against))
+
+
+# Generate a palette of evenly spaced colors across the HCL (Hue, Chroma, Luminance) color space
+base_colors <- grDevices::hcl(h = seq(15, 375, length = length(unique_tests) + 1),
+                              c = 100, 
+                              l = 65)[1:length(unique_tests)]
+
+# Assign each test to a color
+colors_for_tests <- setNames(base_colors, unique_tests)
+
+
+### Create plot
+vulc_plot <- ggplot(vulc_slope, aes(x = ch_pp, y = -log10(p_value))) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", size = 0.2) +
+  geom_point(aes(color = test_against, alpha = p_value < 0.05)) +
+  scale_color_manual(values = colors_for_tests) +
+  scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.12)) + # TRUE for significant, FALSE for not; 1 not translucent; 0.12 very translucent
+  geom_text_repel(aes(label = ifelse(p_value < 0.05 & abs(ch_pp) > threshold_rho, lipid, "")),
+                  box.padding = 0.35, point.padding = 0.5,
+                  size = 3, segment.color = 'grey50') +
+  theme_minimal() +
+  labs(title = "Differences in pre-to-post slopes between groups", x = "Delta slope (pp)", y = "-log10 P-value") +
+  xlim(-1500,1500)+
+  guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) # Hide the alpha legend and fix the color legend
+
+## Display the plot
+print(vulc_plot)
+
+# Save the plot
+ggsave("/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/lipids, pre-post/vulcano/slope_volcano.jpg", plot = vulc_plot, width = 8, height = 10, dpi = 400)
+```
+
+#### Pre-post
+
+```{r}
+# Set threshold for when to plot label
+threshold_rho <- 0.2
+
+# Assuming unique_tests has been defined as before
+unique_tests <- sort(unique(vulc_prePost$test_against))
+
+
+# Generate a palette of evenly spaced colors across the HCL (Hue, Chroma, Luminance) color space
+base_colors <- grDevices::hcl(h = seq(15, 375, length = length(unique_tests) + 1),
+                              c = 100, 
+                              l = 65)[1:length(unique_tests)]
+
+# Assign each test to a color
+colors_for_tests <- setNames(base_colors, unique_tests)
+
+
+### Create plot
+vulc_plot <- ggplot(vulc_prePost, aes(x = log2foldch, y = -log10(p_value))) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", size = 0.2) +
+  geom_point(aes(color = test_against, alpha = p_value < 0.05)) +
+  scale_color_manual(values = colors_for_tests) +
+  scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.12)) + # TRUE for significant, FALSE for not; 1 not translucent; 0.12 very translucent
+  geom_text_repel(aes(label = ifelse(p_value < 0.05 & abs(log2foldch) > threshold_rho, lipid, "")),
+                  box.padding = 0.35, point.padding = 0.5,
+                  size = 3, segment.color = 'grey50') +
+  theme_minimal() +
+  labs(title = "Differences in pre-to-post", x = "log2fc", y = "-log10 P-value") +
+  xlim(-2,2)+
+  guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) # Hide the alpha legend and fix the color legend
+
+## Display the plot
+print(vulc_plot)
+
+# Save the plot
+ggsave("/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/lipids, pre-post/vulcano/prePost_volcano.jpg", plot = vulc_plot, width = 8, height = 10, dpi = 300)
+```
+
+### Heatmap
+
+```{r}
+# Set 'lipid' as row names
+rownames(pvals_df) <- pvals_df$lipid
+rownames(estimates_df_plotData) <- estimates_df_plotData$lipid
+
+# Remove the 'lipid' column
+pvals_df <- pvals_df[ , !(names(pvals_df) %in% c("lipid"))]
+estimates_df_plotData <- estimates_df_plotData[ , !(names(estimates_df_plotData) %in% c("lipid"))]
+
+# Rename columns by removing " (corrected)" from all column names in pvals_df
+colnames(pvals_df) <- gsub(" \\(corrected\\)", "", colnames(pvals_df))
+
+# Sort column names
+common_cols <- intersect(colnames(estimates_df_plotData), colnames(pvals_df))
+estimates_df_plotData <- estimates_df_plotData[, common_cols, drop = FALSE]
+pvals_df <- pvals_df[, common_cols, drop = FALSE]
+
+### Devide dataframe based on lipid groups
+# Define lipid groups
 lipids_groups <- list(
-  gr_tag_ac = c("TAG", "AC"),  # Glycerolipids and Acyl carnitines
-  gr_dg = c("1,2-DG", "1,3-DG"),  # Diglycerides
-  gr_pc = c("PC"),  # Phosphatidylcholines
-  gr_pa_pe = c("PA", "PE"),  # Phosphatidic acid and Phosphatidylethanolamines
-  gr_pg_pi_ps = c("PG", "PI", "PS"),  # Phosphatidylglycerols, Phosphatidylinositols, Phosphatidylserines
-  gr_cer_spm_sph = c("SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingomyelins, Sphingosines, Ceramides and derivatives
-  gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS")  # Lysophospholipids
+  gr_tag = c("TAG"),  # Triacylglycerols
+  gr_dg_ac = c("1,2-DG", "1,3-DG", "AC"),  # Diglycerides and Acyl carnitines
+  gr_pc = c("PC", "PE:PC ratio"),  # Phosphatidylcholines and ratio
+  gr_pe = c("PE"),  # Phosphatidylethanolamines
+  gr_sphingolipids = c("SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingolipids: Sphingomyelins, Sphingosines, Ceramides and derivatives
+  gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS"),  # Lysophospholipids
+  gr_pa_ps = c("PA", "PS"),  # Group combining Phosphatidic acids and Phosphatidylserines
+  gr_pg_pi = c("PG", "PI")  # Group combining Phosphatidylglycerols and Phosphatidylinositols
 )
 
-
-# Define function to filter and sort lipids based on group names
-filter_lipid_group_base <- function(data_frame, lipid_group) {
-  # Create the pattern for matching lipid groups
+### Divide dataframe based on lipid groups with lipid as row name
+filter_lipid_group_row <- function(data_frame, lipid_group) {
+ 
+   # Create the pattern for matching lipid groups
   pattern <- paste0("^(", paste(lipid_group, collapse = "|"), ")")
-  # Sort the data_frame by lipid column
-  sorted_data_frame <- data_frame[order(data_frame$lipid), ]
-  # Filter based on the pattern and return the sorted & filtered data frame
-  sorted_filtered_data_frame <- sorted_data_frame[grepl(pattern, sorted_data_frame$lipid), ]
+  
+  # Convert row names to a temporary column for sorting and filtering
+  data_frame_with_lipid <- tibble::rownames_to_column(data_frame, var = "lipid")
+  
+  # Sort the dataframe by the temporary lipid column
+  sorted_data_frame_with_lipid <- data_frame_with_lipid[order(data_frame_with_lipid$lipid), ]
+  
+  # Filter based on the pattern
+  sorted_filtered_data_frame_with_lipid <- sorted_data_frame_with_lipid[grepl(pattern, sorted_data_frame_with_lipid$lipid), ]
+  
+  # Drop the temporary lipid column and return to original format
+  rownames(sorted_filtered_data_frame_with_lipid) <- sorted_filtered_data_frame_with_lipid$lipid
+  sorted_filtered_data_frame <- sorted_filtered_data_frame_with_lipid[ , !colnames(sorted_filtered_data_frame_with_lipid) %in% 'lipid', drop = FALSE]
   return(sorted_filtered_data_frame)
 }
 
 
 # Apply the filter function to each group and store the results in a lists
 # p-values
-long_format_p_adj_groups.non <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.non)
-long_format_p_adj_groups.gr <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.gr)
-long_format_p_adj_groups.all <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.all)
-# correlations
-long_format_corr_groups <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_cor)
+pvals_gr_list <- lapply(lipids_groups, filter_lipid_group_row, data_frame = pvals_df)
+
+# estimates
+estimates_gr_list <- lapply(lipids_groups, filter_lipid_group_row, data_frame = estimates_df_plotData)
+
+# Convert all dataframes to matrices
+matrices_pvals <- lapply(pvals_gr_list, function(x) as.matrix(x))
+matrices_estimates <- lapply(estimates_gr_list, function(x) as.matrix(x))
 
 
-# Function to create 'unique_test_against' column
-mutate_unique_column_p <- function(data_frame) {
-  data_frame %>%
-    mutate(unique_test_against = paste0(sub("spearman_p_", "", spearman_type), "_", test_against))
-}
-
-# Adjust the function for correlation data frames if necessary
-mutate_unique_column_corr <- function(data_frame) {
-  data_frame %>%
-    mutate(unique_test_against = paste0(sub("spearman_rho_", "", spearman_type), "_", test_against))
-}
-
-# Apply the mutation function to each group's data frames for p-values
-long_format_p_adj_groups.non <- lapply(long_format_p_adj_groups.non, mutate_unique_column_p)
-long_format_p_adj_groups.gr <- lapply(long_format_p_adj_groups.gr, mutate_unique_column_p)
-long_format_p_adj_groups.all <- lapply(long_format_p_adj_groups.all, mutate_unique_column_p)
-
-# Apply the mutation function to each group's data frames for correlations
-long_format_corr_groups <- lapply(long_format_corr_groups, mutate_unique_column_corr)
-
-
-# Function to perform negative log10 transformation and remove p_value column
-transform_p_values <- function(df) {
-  df %>%
-    mutate(p_log10 = -log10(p_value)) %>%
-    select(-p_value)
-}
-
-# Apply the transformation to each list
-long_format_p_adj_log10.non <- lapply(long_format_p_adj_groups.non, transform_p_values)
-long_format_p_adj_log10.gr <- lapply(long_format_p_adj_groups.gr, transform_p_values)
-long_format_p_adj_log10.all <- lapply(long_format_p_adj_groups.all, transform_p_values)
-
-
-# # Make p-values positive or negative based on positive or negative correlation
-# adjust_p_values_based_on_correlation <- function(df_p, df_cor) {
-#   # Ensure the correlation dataframe has the unique_test_against column
-#   df_cor <- df_cor %>%
-#     mutate(unique_test_against = paste0(sub("spearman_rho_", "", spearman_type), "_", test_against))
-#   
-#   # Perform the left join, p-value adjustment, and selection
-#   df_p <- df_p %>%
-#     left_join(select(df_cor, lipid, unique_test_against, rho_value), by = c("lipid", "unique_test_against")) %>%
-#     mutate(p_log10 = ifelse(rho_value < 0, -p_log10, p_log10)) %>%
-#     select(-rho_value)
-#   
-#   return(df_p)
-# }
-# # Apply the adjustment function to each group's data frames in parallel
-# long_format_p_adj_groups.non <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.non, long_format_corr_groups)
-# long_format_p_adj_groups.gr <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.gr, long_format_corr_groups)
-# long_format_p_adj_groups.all <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.all, long_format_corr_groups)
-
- 
-# Define a function to spread the data and convert it to a matrix
-spread_and_convert_matrix <- function(df, unitName) {
-  result_matrix <- df %>%
-    select(lipid, unique_test_against, all_of(unitName)) %>%
-    pivot_wider(names_from = unique_test_against, 
-                values_from = unitName, 
-                values_fill = setNames(list(NA), unitName)) %>%
-    column_to_rownames(var = "lipid") %>%
-    as.matrix()
-  return(result_matrix)
-}
-
-# Apply the function to each list
-matrices_p_adj_non <- lapply(long_format_p_adj_groups.non, function(x) spread_and_convert_matrix(x, "p_value"))
-matrices_p_adj_gr <- lapply(long_format_p_adj_groups.gr, function(x) spread_and_convert_matrix(x, "p_value"))
-matrices_p_adj_all <- lapply(long_format_p_adj_groups.all, function(x) spread_and_convert_matrix(x, "p_value"))
-# To correlation values
-matrices_rho <- lapply(long_format_corr_groups, function(x) spread_and_convert_matrix(x, "rho_value"))
-
-
-generate_heatmap <- function(hm_matrix, p_val_matrix, colorMap, pLims) {
+generate_heatmap <- function(hm_matrix, p_val_matrix, colorMap, pLims, hm_title, hm_unit) {
   # Assumes pLims is a list with named elements corresponding to each threshold, e.g., list(p1 = 0.001, p2 = 0.01, p3 = 0.05)
   
 # Extract test_against by removing the first part (treatment group) and the first underscore
 # This joins back the remaining parts to form the full 'test_against' label
-colTitles <- sapply(strsplit(colnames(hm_matrix), "_", fixed = TRUE), function(x) paste(x[-1], collapse = "_"))
-colTitles <- unique(colTitles)
-  
-  
-# Modify the column names to only show the group
-colnames(hm_matrix) <- sapply(strsplit(colnames(hm_matrix), "_", fixed = TRUE), function(x) {
-  # Concatenate the first part with the first four letters of the second part and "..."
-  paste0(x[1], "", substr(x[2], 1, 0), "")
-})
-
+colTitles <- c("Slope", "Pre vs Post")
 
   Heatmap(hm_matrix,
-          name = "rho", # Sets the name of the color scale
+          name = hm_unit, # Sets the name of the color scale
           
           col = colorMap, # Use provided color map
           rect_gp = gpar(col = "white", lwd = 0.5), # Make space between each square
           row_names_side = "left", # Position of row labels
-          row_names_gp = gpar(fontsize = 7), # Change font size of row labels
+          row_names_gp = gpar(fontsize = 7.5 ), # Change font size of row labels
           
-          column_split = rep(1:(ncol(hm_matrix) / 4), each = 4), # Splits the columns and names them
-          column_title = colTitles, # Custom titles for each split
+          #column_split = rep(1:(ncol(hm_matrix) / 3), each = 3), # Splits the columns and names them
+          column_title = hm_title,
           column_names_rot = 45, # Rotate column names for better readability
           column_names_gp = gpar(fontsize = 8, fontface = "bold"),
           column_title_side = "top", # Placement of the column titles
-          column_title_gp = gpar(fontsize = 7, fontface = "bold"),
+          column_title_gp = gpar(fontsize = 10, fontface = "bold"),
           #column_title = NULL, # Removes titles for split (could be adjusted to represent test)
       
           border = TRUE, # Set border around the splits
@@ -2108,7 +2840,8 @@ colnames(hm_matrix) <- sapply(strsplit(colnames(hm_matrix), "_", fixed = TRUE), 
 }
 
 # Define color map for heatmap
-color_mapping <- colorRamp2(c(-1, 0, 1), c("blue", "white", "red"))
+color_mapping_slope <- colorRamp2(c(-300, 0, 300), c("blue", "white", "red"))
+color_mapping_pre_post <- colorRamp2(c(-3, 0, 3), c("darkgreen", "white", "orange"))
 
 # Set p-value limits
 p_value_limits <- list(p1 = 0.001, p2 = 0.01, p3 = 0.05)
@@ -2118,15 +2851,21 @@ hm <- list()
 
 # Assuming 'matrices_rho$gr1' is your correlation matrix and 'matrices_p_adj_non$gr1' is your p-value matrix
 for (i in 1:length(lipids_groups)) {
+  # Generate slope and pre/post hm
+  
+  hm_slope <- generate_heatmap(matrices_estimates[[i]][,1:3], matrices_pvals[[i]][,1:3], color_mapping_slope, p_value_limits, hm_title = "Slope ", hm_unit = "pp")
+  hm_pre_post <- generate_heatmap(matrices_estimates[[i]][,4:6], matrices_pvals[[i]][,4:6], color_mapping_pre_post, p_value_limits, hm_title = "Pre vs Post", hm_unit = "log2foldch")
+  
+  # Combine heat maps and store in list
+  hm[[i]] <- hm_slope + hm_pre_post
   # Generate heatmap and store it in the list
-  hm[[i]] <- generate_heatmap(matrices_rho[[i]], matrices_p_adj_gr[[i]], color_mapping, p_value_limits)
 }
 
 # Define the path and name of your PDF file
-pdf_path <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/correlations in changes/heatmap/heatmap.pdf"
+pdf_path <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/lipids, pre-post/heatmap/heatmap.pdf"
 
 # Open a PDF device
-pdf(pdf_path, width = 12, height = 14)
+pdf(pdf_path, width = 8, height = 10)
 
 # Draw your heatmaps. Each call to draw() will create a new page in the PDF for each heatmap
 for (i in 1:length (hm)){
@@ -2138,10 +2877,10 @@ dev.off()
 
 ```
 
-
-
 ## p-value plots
+
 Make plots of p-values sorted highest to lowest for lipid classes and lipid compositions within each lipid class
+
 ```{r}
 generate_barplot <- function(data, col_index_non_corrected, col_index_corrected, output_base_path, data_name) {
   # Extract test names based on indices
@@ -2230,9 +2969,10 @@ for (i in 1:nrow(cols_to_plot)) {
 
 ```
 
-
 ## Scatter plots
-Scatter plots with insulin sensitivity as colormap. Data points above ULOQ and below LLOQ are marked with triangles for.
+
+Composition scatter plot Data points above ULOQ and below LLOQ are marked with triangles for.
+
 ```{r}
 # Create a named vector mapping IDs to continuous values for coloring
 # color_map <- setNames(mirage_data$gdr_rd_ss2_mg_kg_ffm_min_pre, mirage_data$id)
@@ -2250,6 +2990,14 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
   search_key <- paste(lipid_class, lipid_composition, sep = "_")
   pvalues_to_annotate <- p_val_df[p_val_df[, 1] == search_key, ]
 
+  
+    # Calculate means for each group and time point
+mean_data_comp <- filtered_data %>%
+  group_by(group, time) %>%
+  summarise(mean_pmol_mg = mean(pmol_mg, na.rm = TRUE),
+            .groups = 'drop')
+  
+
   # Generate labels with original and corrected p-values
   annotation_pvals_pre_post <- paste0(
     "pre vs post, p = ", formatC(unlist(pvalues_to_annotate[1, 2:4]), format = "f", digits = 3),
@@ -2264,7 +3012,7 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
     ", BH corrected, p = ", formatC(unlist(pvalues_to_annotate[1, 13]), format = "f", digits = 3)
   )
 
-  # Prepare the plot
+  # Make the plot
   plot <- ggplot(filtered_data, aes(
     x = factor(interaction(group, time, sep = " "),
       levels = c("HED Pre", "HED Post", "DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post")
@@ -2273,15 +3021,6 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
   )) +
     geom_line(aes(group = interaction(id, group)), color = "darkgrey", position = position_nudge(x = 0.03)) +
     
-      stat_summary( # Add the mean
-    aes(group = interaction(group, time)),
-    fun = mean, 
-    geom = "point",
-    color = "black", 
-    size = 2, 
-    shape = 23,
-    fill = "black"
-  )+
       geom_point(aes(color = color_map[id]), alpha = 0.5, position = position_nudge(x = 0.03)) +
     geom_boxplot(aes(group = interaction(group, time)),
       width = 0.3, alpha = 0.2, outlier.shape = NA,
@@ -2293,8 +3032,12 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, color_map, 
     ) +
     geom_point(
       data = subset(filtered_data, within_threshold == 1), aes(y = pmol_mg), size = 3, shape = 25, color = "black", fill = "grey",
-      alpha = 0.3, position = position_nudge(x = 0.03) # Down triangle for values 
+      alpha = 0.3, position = position_nudge(x = 0.03) # Down triangle for values below LLOQ
     ) +
+    
+    
+      geom_line(data = mean_data_comp, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg, group = group),color = "black", linewidth = 1, position = position_nudge(x = 0.03)) +
+    
       
     scale_color_manual(values = c("M" = "blue", "F" = "red"), name = "Gender") +
     labs(
@@ -2339,25 +3082,20 @@ for (lipid_class in unique_lipid_classes) {
 ```
 
 Scatter plot for each lipid class based on absolute lipid class concentration
+
 ```{r}
 plot_lipid_class <- function(lipidomicsDF, lipid_class, detection_limits, p_val_df) {
   # Filter data based on lipid class and available time
   filtered_data <- lipidomicsDF %>%
     filter(lipidClass == lipid_class & !is.na(time))
 
-  
-  ### MAKE SUM FOR EACH ID
-pmol_mg_class_sum <- lipidomicsDF %>%
-  group_by(id) %>%
+# MAKE SUM FOR EACH ID
+pmol_mg_class_sum <- filtered_data %>%
+  group_by(lipidClass, group, id, time) %>%
   summarize(
-    sum_pmol_mg_Pre = sum(pmol_mg_Pre, na.rm = TRUE),
-    sum_pmol_mg_Post = sum(pmol_mg_Post, na.rm = TRUE)
-  ) %>%
-  ungroup()
-    
-    
-    
-  ########### ############### ############### ############### ############### ############### ############### ############### 
+    sum_pmol_mg = sum(pmol_mg, na.rm = TRUE),
+    .groups = "drop"  # Drop the grouping
+  )
   
   # Find correct p-values
   search_key <- lipid_class
@@ -2379,22 +3117,38 @@ pmol_mg_class_sum <- lipidomicsDF %>%
   )
   
   # Calculate means for each group and time point
-mean_data <- filtered_data %>%
+mean_data_class <- pmol_mg_class_sum %>%
   group_by(group, time) %>%
-  summarise(mean_pmol_mg_znorm = mean(pmol_mg_znorm, na.rm = TRUE), .groups = 'drop')
+  summarise(mean_pmol_mg_sum = mean(sum_pmol_mg, na.rm = TRUE), .groups = 'drop')
   
+# Check if "PE:PC ratio" is one of the lipid classes
+y_label <- if("PE/PC ratio" %in% filtered_data$lipidClass) {
+  "PE/PC ratio"
+} else {
+  expression("Lipid concentration" ~ "(pmol ·" ~ mg^-1 * ")")
+}
+
+
 # Create the plot
-plot <- ggplot(filtered_data, aes(
+plot <- ggplot(pmol_mg_class_sum, aes(
     x = factor(interaction(group, time, sep = " "),
       levels = c("HED Pre", "HED Post", "DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post")
     ),
-    y = pmol_mg_znorm, group = interaction(id, group)
+    y = sum_pmol_mg, group = interaction(id, group)
   )) +
-  geom_line(aes(group = interaction(id, group, lipidComposition), color = lipidComposition), alpha = 0.9, size = 0.1, position = position_nudge(x = 0.03)) +
-  geom_point(aes(color = lipidComposition), alpha = 0.5, position = position_nudge(x = 0.03)) +
-  geom_line(data = mean_data, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg_znorm, group = group),color = "black", size = 1, position = position_nudge(x = 0.03)) +
-  scale_color_manual(values = rainbow(length(unique(filtered_data$lipidComposition)))) +
-  labs(title = lipid_class, subtitle = annotation_pvals_slope, y = "Lipid concentration, Z norm [comp within group]", x = "") +
+  geom_line(aes(group = interaction(id, group), color = id), alpha = 0.9, linewidth = 0.1, position = position_nudge(x = 0.03)) +
+  geom_point(aes(color = id), alpha = 0.5, position = position_nudge(x = 0.03)) +
+
+    geom_boxplot(aes(group = interaction(group, time)),
+      width = 0.3, alpha = 0.2, outlier.shape = NA,
+      position = position_dodge(width = 0.75), color = "black"
+    ) +
+  geom_line(data = mean_data_class, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg_sum, group = group),color = "black", linewidth = 1, position = position_nudge(x = 0.03)) +
+  scale_color_manual(values = rainbow(length(unique(pmol_mg_class_sum$id)))) +
+  labs(title = lipid_class, 
+       subtitle = annotation_pvals_slope, 
+       y = y_label,
+       x = "") +
   annotate("text", x = c(1.5, 3.5, 5.5), y = 3.0, label = annotation_pvals_pre_post, size = 2) +
   theme_minimal() +
   theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right",
@@ -2403,9 +3157,9 @@ plot <- ggplot(filtered_data, aes(
         plot.subtitle = element_text(size = 5, hjust = 0.5))
 
   # Filter the LLOQ and ULOQ for the current lipid_class and set y-axis limits
-  y_min <- min(filtered_data$pmol_mg_znorm, na.rm = TRUE) * 0.95 # Adjusted
-  y_max <- max(filtered_data$pmol_mg_znorm, na.rm = TRUE) * 1.05 # Adjusted
-  plot <- plot + coord_cartesian(ylim = c(y_min, y_max))
+  #y_min <- min(pmol_mg_class_sum$sum_pmol_mg, na.rm = TRUE) * 0.95 # Adjusted
+  #y_max <- max(pmol_mg_class_sum$pmol_mg_znorm, na.rm = TRUE) * 1.05 # Adjusted
+  # plot <- plot + coord_cartesian(ylim = c(y_min, y_max))
 
   # Define the filename and save the plot
   filename <- paste0(
@@ -2423,9 +3177,8 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
+Scatter plots of Z-score for each lipid class with lipid classes shown in different colors
 
-
-Scatter plots for each lipid class with lipid classes shown in different colors
 ```{r}
 plot_lipid_class_z_score <- function(lipidomicsDF, lipid_class, detection_limits, p_val_df) {
   # Filter data based on lipid class and available time
@@ -2452,7 +3205,7 @@ plot_lipid_class_z_score <- function(lipidomicsDF, lipid_class, detection_limits
   )
   
   # Calculate means for each group and time point
-mean_data <- filtered_data %>%
+mean_data_class_zscore <- filtered_data %>%
   group_by(group, time) %>%
   summarise(mean_pmol_mg_znorm = mean(pmol_mg_znorm, na.rm = TRUE), .groups = 'drop')
   
@@ -2465,7 +3218,7 @@ plot <- ggplot(filtered_data, aes(
   )) +
   geom_line(aes(group = interaction(id, group, lipidComposition), color = lipidComposition), alpha = 0.9, size = 0.1, position = position_nudge(x = 0.03)) +
   geom_point(aes(color = lipidComposition), alpha = 0.5, position = position_nudge(x = 0.03)) +
-  geom_line(data = mean_data, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg_znorm, group = group),color = "black", size = 1, position = position_nudge(x = 0.03)) +
+  geom_line(data = mean_data_class_zscore, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg_znorm, group = group),color = "black", size = 1, position = position_nudge(x = 0.03)) +
   scale_color_manual(values = rainbow(length(unique(filtered_data$lipidComposition)))) +
   labs(title = lipid_class, subtitle = annotation_pvals_slope, y = "Lipid concentration, Z norm [comp within group]", x = "") +
   annotate("text", x = c(1.5, 3.5, 5.5), y = 3.0, label = annotation_pvals_pre_post, size = 2) +
