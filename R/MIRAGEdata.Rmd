@@ -1,5 +1,5 @@
 ---
-title: "MIRAGEdata"
+title: "MIRAGEdata"   
 purpose: To load, merge, explore, and plot lipidomics data and look for correlations with cardiometabolic endpoints the MIRAGE dataset.
 output:
 html_notebook: default
@@ -38,7 +38,8 @@ Cut offs and values to be used throughout the analysis
 # Number of points above 0 needed for an analysis to take place. The number is the number of id's within class across all intervention groups.
 analysis_cutoff <- 15
 
-LLOQ_discard_factor <- 3
+## Factor above LLOQ to discard a value
+LLOQ_discard_factor <- 2
 ```
 
 # Load and prepare data
@@ -171,7 +172,7 @@ for (i in 1:nrow(lipidomicsDF)) {
     lipidomicsDF$within_threshold[i] <- 1 # Below LLOQ
   } else if (current_pmol > (current_ULOQ * LLOQ_discard_factor)) { # Above value to be discarded
     lipidomicsDF$within_threshold[i] <- 3
-    lipidomicsDF$pmol[i] <- NA # Corrected to set only the current row's pmol to NA
+    # lipidomicsDF$pmol[i] <- NA # Corrected to set only the current row's pmol to NA
   } else if (current_pmol > current_ULOQ) {
     lipidomicsDF$within_threshold[i] <- 2 # Above ULOQ
   } else {
@@ -183,6 +184,17 @@ return (lipidomicsDF)
 
 lipidomicsDF <- limitFunction(lipidomicsDF, detection_limits)
 ```
+
+### Outlier removal
+```{r}
+##### Manual removal #####
+
+# Subject MG034 POST (Tube 66)
+# Reason: Removed as TAG values are unnaturally high strongly suggesting IMAT contamination in the sample. As other lipids either directly or through the weight normalization would be affected, the post-measurement point is removed.
+
+lipidomicsDF <- lipidomicsDF[!lipidomicsDF$sampleNumber == 66,]
+```
+
 
 ### Ratios and saturation
 
@@ -211,7 +223,7 @@ sums_wide <- sums_df %>%
 
 # Step 3: Calculate the PE/PC ratio
 ratios_df <- sums_wide %>%
-  mutate(lipidClass = "PE:PC ratio",
+  mutate(lipidClass = "PE_PC ratio",
          lipidComposition = NA_character_,  # Assuming character; adjust as needed
          pmol = NA_real_,  # Set to NA; adjust type as needed
          pmol_mg = PE / PC,
@@ -325,54 +337,56 @@ mirage_data$mvpa_mins_day_post <- mirage_data$mpa_mins_day_post + mirage_data$vp
 ```{r}
 # List with pre-post variables of interest
 glycemicControl <- list(
-  c("rd_ss1kg_ffm_insulin_pre", "rd_ss1kg_ffm_insulin_post"),
-  c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post"),
-  c("vo2kg_ffm_pre", "vo2kg_ffm_post"),
-  c("hgb_a1c_pre", "hgb_a1c_post"),
-  c("homair_pre", "homair_post"),
-  c("egp0kg_ffm_pre", "egp0kg_ffm_post"),
-  c("egpss1kg_ffm_pre", "egpss1kg_ffm_post"),
-  c("egpss2kg_ffm_pre", "egpss2kg_ffm_post"),
-  c("age_pre", "age_post")) # Age must appear last in this list!
+  c("rd_ss1kg_ffm_insulin_pre", "rd_ss1kg_ffm_insulin_post", "Glucose RD per FFM and insulin (?)"),
+  c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post", "Glucose RD per FFM and insulin (?)"),
+  c("hgb_a1c_pre", "hgb_a1c_post", "HbA1c (mmol / mol?)"),
+  c("homair_pre", "homair_post", "HOMAIR (abr unit)"),
+  c("egp0kg_ffm_pre", "egp0kg_ffm_post", "Endogenous glucose production (?)"),
+  c("egpss1kg_ffm_pre", "egpss1kg_ffm_post", "Endogenous glucose production (?)"),
+  c("egpss2kg_ffm_pre", "egpss2kg_ffm_post", "Endogenous glucose production (?)")
+  )
 
 mitochondria <- list(
-  c("at_pmax_p_mrs_pre", "at_pmax_p_mrs_post"),
-  c("pcr_p_mrs_pre", "pcr_p_mrs_post"),
-  c("max_oxphos_pre", "max_oxphos_post"),
-  c("max_ets_pre", "max_ets_post"),
-  c("le_pre", "le_post"),
-  c("pe_pre", "pe_post"),
-  c("age_pre", "age_post")) # Age must appear last in this list!
+  c("at_pmax_p_mrs_pre", "at_pmax_p_mrs_post", "ATP max (?)"),
+  c("pcr_p_mrs_pre", "pcr_p_mrs_post", "PCR recovery? (?)"),
+  c("max_oxphos_pre", "max_oxphos_post", "Max oxidative phosphorylation (?)"),
+  c("max_ets_pre", "max_ets_post", "Max ETS? (?)"),
+  c("le_pre", "le_post", "Leak? (?)"),
+  c("pe_pre", "pe_post", "PE? (?)")
+  )
 
-bodycomposition <- list(
-  c("leg_lean_mass_pre", "leg_lean_mass_post"),
-  c("fat_mass_dxa_pre", "fat_mass_dxa_post"),
-  c("lean_mass_dxa_pre", "lean_mass_dxa_post"),
-  c("ffm_dxa_pre", "ffm_dxa_post"),
-  c("thigh_sat_g_pre", "thigh_sat_g_post"),
-  c("thigh_imat_g_pre", "thigh_imat_g_post"),
-  c("percent_imat_pre", "percent_imat_post"),
-  c("thigh_muscle_g_pre", "thigh_muscle_g_post"),
-  c("abdomen_vat_g_pre", "abdomen_vat_g_post"),
-  c("age_pre", "age_post")) # Age must appear last in this list!
+bodycomposition <- list( # SHOULD FFM ETC. WEIGHTs BE NORMALISED TO TOTAL WEIGHT?
+  c("leg_lean_mass_pre", "leg_lean_mass_post", "Leg lean mass (kg?)" ),
+  c("fat_mass_dxa_pre", "fat_mass_dxa_post", "Fat mass (kg?)"),
+  c("lean_mass_dxa_pre", "lean_mass_dxa_post", "Lean body mass (kg?)"),
+  c("ffm_dxa_pre", "ffm_dxa_post", "Fat free mass (kg?)"),
+  c("thigh_sat_g_pre", "thigh_sat_g_post", "Thigh SAT, (g)"),
+  c("thigh_imat_g_pre", "thigh_imat_g_post", "IMAT (g)"),
+  c("percent_imat_pre", "percent_imat_post", "IMAT fraction (%)"),
+  c("thigh_muscle_g_pre", "thigh_muscle_g_post", "Thigh muscle (g)"),
+  c("abdomen_vat_g_pre", "abdomen_vat_g_post", "Adbominal VAT (g)"),
+  c("type_iia_iix_pre", "type_iia_iix_post", "Fibertype? (?)")
+  )
 
 blood <-  list(
-  c("vldl_pre", "vldl_post"),
-  c("ldl_pre", "ldl_post"),
-  c("hdl_pre", "hdl_post"),
-  c("cholesterol_pre", "cholesterol_post"),
-  c("triglycerides_pre", "triglycerides_post"),
-  c("plasma_ffabg_pre", "plasma_ffabg_post"),
-  c("age_pre", "age_post"))# Age must appear last in this list!
+  c("vldl_pre", "vldl_post", "VLDL (mmol / l)"),
+  c("ldl_pre", "ldl_post", "LDL (mmol / l"),
+  c("hdl_pre", "hdl_post", "HDL (mmol / l)"),
+  c("cholesterol_pre", "cholesterol_post", "Total cholesterol (mmol / l)"),
+  c("triglycerides_pre", "triglycerides_post", "Triglycerides (mmol / l)"),
+  c("plasma_ffabg_pre", "plasma_ffabg_post", "FFA (mmol / l)")
+  )
   
   physicalActivity <- list(
-  c("mvpa_mins_day_pre", "mvpa_mins_day_post"),
-  c("vo2abs_pre", "vo2abs_post"),
-  c("vo2kg_ffm_pre", "vo2kg_ffm_post"),
-  c("x4m_walk_pre", "x4m_walk_post"),
-  c("StepTest_Pre", "StepTest_Post"),
-  c("x1rm_pre", "x1rm_post"),
-  c("age_pre", "age_post")) # Age must appear last in this list!
+  c("mvpa_mins_day_pre", "mvpa_mins_day_post", "Time per day (min / day)"),
+  c("vo2abs_pre", "vo2abs_post", "Oxygen uptake (l / min)"),
+  c("vo2kg_ffm_pre", "vo2kg_ffm_post", "Oxygen uptake (l / min / kgFFM) "),
+  c("x4m_walk_pre", "x4m_walk_post", "Time? (s)"),
+  c("step_test_pre", "step_test_post", "Steps? (?)"),
+  c("x1rm_pre", "x1rm_post", "Stength (?)"),
+  c("peak_torque120_pre", "peak_torque120_post", "Torque (Nm?)"),
+  c("age_pre", "age_post", "Age (years)")
+  )
   
   mirage_ch_vars <- list(
     glycemicControl = glycemicControl,
@@ -389,18 +403,18 @@ blood <-  list(
 
 ```{r}
 # Glycemic Control
-glycemicControl <- c("rd_ss1kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_pre", "vo2kg_ffm_pre", "hgb_a1c_pre", "homair_pre", "egp0kg_ffm_pre", "egpss1kg_ffm_pre", "egpss2kg_ffm_pre")
+glycemicControl <- c("rd_ss1kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_pre", "hgb_a1c_pre", "homair_pre", "egp0kg_ffm_pre", "egpss1kg_ffm_pre", "egpss2kg_ffm_pre")
 
 # Mitochondria
 mitochondria <- c("at_pmax_p_mrs_pre", "pcr_p_mrs_pre", "max_oxphos_pre", "max_ets_pre", "le_pre", "pe_pre")
 
-bodycomposition <- c("leg_lean_mass_pre", "fat_mass_dxa_pre", "lean_mass_dxa_pre", "ffm_dxa_pre", "thigh_sat_g_pre", "thigh_imat_g_pre", "percent_imat_pre", "thigh_muscle_g_pre", "abdomen_vat_g_pre")
+bodycomposition <- c("leg_lean_mass_pre", "fat_mass_dxa_pre", "lean_mass_dxa_pre", "ffm_dxa_pre", "thigh_sat_g_pre", "thigh_imat_g_pre", "percent_imat_pre", "thigh_muscle_g_pre", "abdomen_vat_g_pre", "type_iia_iix_pre")
 
 # Blood
 blood <- c("vldl_pre", "ldl_pre", "hdl_pre", "cholesterol_pre", "triglycerides_pre", "plasma_ffabg_pre")
 
 # Physical Activity + Age
-physicalActivity <- c("mvpa_mins_day_pre", "vo2abs_pre", "vo2kg_ffm_pre", "x4m_walk_pre", "StepTest_Pre", "x1rm_pre", "age_pre")
+physicalActivity <- c("mvpa_mins_day_pre", "vo2abs_pre", "vo2kg_ffm_pre", "x4m_walk_pre", "step_test_pre", "x1rm_pre", "age_pre")
 
 
 # Combining all the "_pre" variables into a single list for mirage_crossSectional_vars, excluding "age_pre" from all but the physicalActivity list
@@ -416,8 +430,11 @@ mirage_crossSectional_vars <- list(
 **Mirage long format** Convert Mirage dataset with selected variables into long format with selected Pre\|Post varibles
 
 ```{r}
-# Flatten the list of column names into a single vector
-columns_to_merge <- unlist(mirage_ch_vars)
+# Flatten the lists into a single vector
+columns_to_merge <- mirage_ch_vars_flat <- unlist(unlist(lapply(mirage_ch_vars, function(category) {
+  lapply(category, function(item) item[1:2])
+}), recursive = FALSE), use.names = FALSE)
+
 
 # Select columns from 'mirage_data' including the 'id' column
 mirage_data_subset <- mirage_data[c("id", columns_to_merge)]
@@ -449,13 +466,10 @@ mirage_data_long_ch <- mirage_data_long_ch %>%
 ```
 
 # Mirage pre-post analysis w plot
-
 ```{r}
-endpoint_variable <- c("daily_steps_steps_24hr_pre", "daily_steps_steps_24hr_post")
-y_label <- expression("Steps per 24 hours")
-
-mirage_analysis_and_plot <- function(endpoint_variable, y_label)
-{
+## Make function for the analysis
+mirage_analysis_and_plot <- function(endpoint_variable, y_label, save_folder){
+  
 # Turn MIRAGE data into long format to be able to plot data
 # Combine all variables of interest
 subset_variables <- c("id", "group", "gender", endpoint_variable)
@@ -625,12 +639,12 @@ plot <- ggplot(mirage_plot_long, aes(
   
   # Lines for all, colored conditionally, alpha adjusted directly
   geom_line(aes(color = if_else(in_lipidomics == TRUE, "Lipidomics", "MIRAGE"), 
-                alpha = if_else(in_lipidomics == TRUE, 1, 0.7)), 
+                alpha = if_else(in_lipidomics == TRUE, 1, 0.95)), 
             position = position_nudge(x = 0.03)) +
   
   # Points for all, colored conditionally, alpha adjusted directly
   geom_point(aes(color = if_else(in_lipidomics == TRUE, "Lipidomics", "MIRAGE"), 
-                 alpha = if_else(in_lipidomics == TRUE, 1, 0.7)),  # Adjusted alpha for visibility
+                 alpha = if_else(in_lipidomics == TRUE, 1, 0.95)),  # Adjusted alpha for visibility
              position = position_nudge(x = 0.03)) +
   
   geom_boxplot(data = mirage_plot_long[mirage_plot_long$in_lipidomics == TRUE, ],
@@ -644,7 +658,7 @@ plot <- ggplot(mirage_plot_long, aes(
   
   # Mean line MIRAGE
   geom_line(data = mean_data, aes(x = interaction(group, time, sep = " "), y = mean_mirage, group = group), 
-            color = "grey", alpha = 0.8, linewidth = 1, position = position_nudge(x = 0.03)) +
+            color = "darkgrey", alpha = 0.95, linewidth = 1, position = position_nudge(x = 0.03)) +
   
   scale_color_manual(values = c("Lipidomics" = "black", "MIRAGE" = "darkgrey"), name = "Data") +
   
@@ -676,28 +690,44 @@ plot <- ggplot(mirage_plot_long, aes(
     plot.caption = element_text(size = 8)
   )
 
-# Print the plot
-print(plot)
+# Define the directory
+dir_path <- paste0("/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/mirage/", save_folder)
 
-  # Define the filename and save the plot
-  filename <- paste0(
-    "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/mirage/",
-    endpoint_variable, ".jpg")
-  
-  ggsave(filename, plot = plot, device = "jpeg", width = 8, height = 6, dpi = 300)
-  
-  }
+# Create the directory if it does not exist
+if (!dir.exists(dir_path)) {
+  dir.create(dir_path, recursive = TRUE)
+}
 
+# Define the filename
+filename <- file.path(dir_path, paste0(endpoint_variable, ".jpg"))
+
+# Save the plot
+ggsave(filename, plot = plot, device = "jpeg", width = 8, height = 6, dpi = 300)
+ 
+ }
 
 
 ### Run function
-endpoint_variable <- c("mpa_mins_day_pre", "mpa_mins_day_post")
-y_label <- expression("mins/day")
+# Loop through each named element of mirage_ch_vars
+for (list_name in names(mirage_ch_vars)) {
+  # Print the name of the list
+  for (i in 1:length(mirage_ch_vars[[list_name]])) {
+    mirage_analysis_and_plot(endpoint_variable=mirage_ch_vars[[list_name]][[i]][1:2], y_label=mirage_ch_vars[[list_name]][[i]][3], save_folder = list_name)
+  }}
+  
 
-mirage_analysis_and_plot(endpoint_variable=endpoint_variable, y_label=y_label)
+
+
+# endpoint_variable <- c("mpa_mins_day_pre", "mpa_mins_day_post")
+# y_label <- expression("mins/day")
+
+
+
+
+
 ```
 
-## Table 1 statistics
+# Table 1 statistics
 
 ```{r}
 # Filter mirage subjects included in this study
@@ -749,7 +779,6 @@ sd(mirage_included[mirage_included$group == "HED",]$daily_steps_steps_24hr_post 
 ```
 
 # Analysis based on changes
-
 ## Prepare data (function)
 
 Function to prepare and merge data into wide format
@@ -757,14 +786,14 @@ Function to prepare and merge data into wide format
 ```{r}
 # Function to prepare data
 prepare_and_combine_data <- function(lipidomicsData, pre_post_cols, mirageData, lipidclass, lipidcomposition) {
-  # Filter and prepare lipidomics data
-  if (is.null(lipidcomposition)) {
+ 
+# Filter and prepare lipidomics data
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+  lipidomics_selected <- filter(lipidomicsData, lipidClass == lipidclass, lipidComposition == lipidcomposition)
+} else {
     lipidomics_selected <- filter(lipidomicsData, lipidClass == lipidclass)
-  } else {
-    lipidomics_selected <- filter(lipidomicsData, lipidClass == lipidclass, lipidComposition == lipidcomposition)
-    
-  }
-    
+}
+  
   # - - -
   # Remove lipid composition within lipid class if fewer non-zero values than the analysis_cutoff. Only for lipidComposition. Add new col called to to_analyse in based on number of non_zero_rows
   non_zero_rows <- lipidomics_selected %>%
@@ -784,7 +813,6 @@ prepare_and_combine_data <- function(lipidomicsData, pre_post_cols, mirageData, 
 
   # Adding a small constant to avoid log2(0) if there are zeros
 pseudo_count <- 1
-
 # Calculate log2 fold change directly within the dataset
 lipidomics_wide <- lipidomics_wide %>%
   mutate(lipid_log2fold = log2((pmol_mg_Post + pseudo_count) / (pmol_mg_Pre + pseudo_count)))
@@ -812,18 +840,20 @@ lipidomics_wide <- lipidomics_wide %>%
   
   # Combine with mirageData based on id
   combined_df <- left_join(mirageData, lipidomics_wide, by = "id")
-
-  # Dynamically calculate deltas for specified pre/post columns
-  for (col_pair in pre_post_cols) {
-    pre_col <- col_pair[1]
-    post_col <- col_pair[2]
-    delta_col_name <- paste0(sub("_pre", "", pre_col), "_ch")
-
+  
+    # Loop through all lists
+    for (j in 1:length(pre_post_cols)){
+      for (g in 1:length (pre_post_cols[[j]])){
+      pre_col <- pre_post_cols[[j]][[g]][1]
+      post_col <- pre_post_cols[[j]][[g]][2]
+      delta_col_name <- paste0(sub("_pre", "", pre_col), "_ch")
+    
     # Calculate deltas
     combined_df <- combined_df %>%
       mutate(!!sym(delta_col_name) := as.numeric(.[[post_col]]) - as.numeric(.[[pre_col]]))
-  }
-
+      }
+      }
+# }
   # Convert specified columns to factors and remove group
   combined_df <- combined_df %>%
     rename(group = group.x) %>%
@@ -851,13 +881,13 @@ Function to get correlation between changes of defined parameters
 # Define a function to compute correlations of change
 correlation_of_change <- function(correlation_df, lipidomicsDF, mirage_data_long_ch, mirage_variables_of_interest, lipidclass, lipidcomposition) {
 
+# Determine the lipid name based on the presence of lipid composition
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+lipidName <- paste0(lipidclass, " ", lipidcomposition)
+} else {
+    lipidName <- lipidclass
+}
   
-      # Determine the lipid name based on the presence of lipid composition
-    if (is.null(lipidcomposition)) {
-      lipidName <- lipidclass
-    } else {
-      lipidName <- paste0(lipidclass, " ", lipidcomposition)
-    }
   
   # Only run code if correlation df is not NA. If, Na, assign NA values to all correlation results
   if (correlation_df$skipAnalysis[[1]] == TRUE){
@@ -911,16 +941,12 @@ correlation_of_change <- function(correlation_df, lipidomicsDF, mirage_data_long
   )
   
   # Loop over every mirage variables of interest
-  for (df in mirage_variables_of_interest) {
-    # Manipulate current variable name
-    test_against_name <- (df[[1]])
-    test_against_name_clean <- sub("_pre$", "", test_against_name)
-    test_against_name <- sub("pre$", "ch", test_against_name)
-
-    # Skip this iteration if the first column's name is "age"
-    if (test_against_name_clean == "age") {
-      next
-    }
+    for (j in 1:length(mirage_variables_of_interest)){
+      for (g in 1:length (mirage_variables_of_interest[[j]])){
+        test_against_name <- mirage_variables_of_interest[[j]][[g]][[1]]
+        test_against_name_clean <- sub("_pre$", "", test_against_name)
+        test_against_name <- sub("pre$", "ch", test_against_name)
+        
 
     # Add new row to output df
     correlation_results <- add_row(correlation_results)
@@ -976,12 +1002,13 @@ correlation_of_change <- function(correlation_df, lipidomicsDF, mirage_data_long
     merged_data <- left_join(lipidomicsDF, mirage_data_long_ch, by = c("id", "time"))
 
     # Prepare lipidomics data
-    if (is.null(lipidcomposition)) {
-      merged_data_filtered <- filter(merged_data, lipidClass == lipidclass)
-    } else {
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
       merged_data_filtered <- filter(merged_data, lipidClass == lipidclass, lipidComposition == lipidcomposition)
-    }
-
+} else {
+    merged_data_filtered <- filter(merged_data, lipidClass == lipidclass)
+}
+    
+    
     # Ensure 'time' and 'group' are factors
     merged_data_filtered$time <- as.factor(merged_data_filtered$time)
     merged_data_filtered$group <- as.factor(merged_data_filtered$group)
@@ -1021,6 +1048,7 @@ correlation_of_change <- function(correlation_df, lipidomicsDF, mirage_data_long
       }
     )
   }
+    }
   }
   return(correlation_results)
 }
@@ -1030,32 +1058,27 @@ correlation_of_change <- function(correlation_df, lipidomicsDF, mirage_data_long
 
 ```{r}
 correlation_change_plot <- function(correlation_df, mirage_ch_vars, correlation_results, savePath, lipidclass, lipidcomposition) {
+  
   # Make lipid name
-  if (is.null(lipidcomposition)) {
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+lipidName <- paste0(lipidclass, " ", lipidcomposition)
+} else {
     lipidName <- lipidclass
-  } else {
-    lipidName <- paste0(lipidclass, " ", lipidcomposition)
-  }
-
+}
+  
+  
   # Only plot if there's data to plot
   if (!all(is.na(correlation_df$pmol_mg_ch))) {
     # Extract the first element from each sub-list, replace "pre" with "ch", and compile into a single vector
-    plotVars <- unlist(lapply(mirage_ch_vars, function(x) sub("_pre", "_ch", x[1])))
-    # Remove "age_ch" from the vector if it exists
-    plotVars <- plotVars[plotVars != "age_ch"]
+    plotVars <- unlist(unlist(lapply(mirage_ch_vars, function(category) {
+    lapply(category, function(item) sub("_pre", "_ch", item[1]))
+    }), recursive = FALSE), use.names = FALSE)
+    
 
-    # If lipidcomposition is null, the only plot class
-    if (is.null(lipidcomposition)) {
-      # Add lipid variable to plotVars
-      # Make plot with log2 fold change if only class is available
-      plotVars <- c("pmol_mg_ch_id", plotVars)
-
-      pm <- ggpairs(correlation_df,
-        mapping = aes(color = group),
-        columns = plotVars
-      )
-    } else {
-      # Add lipid variable to plotVars
+    
+    # If lipidcomposition is null, then only plot class
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+    # Add lipid variable to plotVars
       plotVars <- c("pmol_mg_ch", plotVars)
 
       # Now use ggpairs on the renamed dataframe
@@ -1064,7 +1087,17 @@ correlation_change_plot <- function(correlation_df, mirage_ch_vars, correlation_
         columns = plotVars,
         lower = list(continuous = wrap("smooth", method = "none", se = FALSE))
       )
-    }
+} else {
+         # Add lipid variable to plotVars
+      # Make plot with log2 fold change if only class is available
+      plotVars <- c("pmol_mg_ch_id", plotVars)
+
+      pm <- ggpairs(correlation_df,
+        mapping = aes(color = group),
+        columns = plotVars
+      )
+}
+    
 
     # Take plots from the ggpairs plot and add to list
     plotList <- list()
@@ -1077,28 +1110,31 @@ correlation_change_plot <- function(correlation_df, mirage_ch_vars, correlation_
       # Get correlations for the correct lipid and test
       correlation_row <- filter(correlation_results, lipid == lipidName & test_against == plotVar)
 
+      
       # Annotate plot with correlation information
       annotated_plot <- plot + annotate("text",
         x = Inf, y = Inf,
         label = paste0(
-          "Non-corrected\nAll: Pearson, p = ", formatC(correlation_row$pearson_p_all, format = "f", digits = 3),
-          ", r = ", formatC(correlation_row$pearson_r_all, format = "f", digits = 3),
-          "\nSpearman, p = ", formatC(correlation_row$spearman_p_all, format = "f", digits = 3),
-          ", rho = ", formatC(correlation_row$spearman_rho_all, format = "f", digits = 3),
-          "\nHED: Pearson, p = ", formatC(correlation_row$pearson_p_HED, format = "f", digits = 3),
-          ", r = ", formatC(correlation_row$pearson_r_HED, format = "f", digits = 3),
-          "\nSpearman, p = ", formatC(correlation_row$spearman_p_HED, format = "f", digits = 3),
-          ", rho = ", formatC(correlation_row$spearman_rho_HED, format = "f", digits = 3),
-          "\nDIWL: Pearson, p = ", formatC(correlation_row$pearson_p_DIWL, format = "f", digits = 3),
-          ", r = ", formatC(correlation_row$pearson_r_DIWL, format = "f", digits = 3),
-          "\nSpearman, p = ", formatC(correlation_row$spearman_p_DIWL, format = "f", digits = 3),
-          ", rho = ", formatC(correlation_row$spearman_rho_DIWL, format = "f", digits = 3),
-          "\nWLEX: Pearson, p = ", formatC(correlation_row$pearson_p_WLEX, format = "f", digits = 3),
-          ", r = ", formatC(correlation_row$pearson_r_WLEX, format = "f", digits = 3),
-          "\nSpearman, p = ", formatC(correlation_row$spearman_p_WLEX, format = "f", digits = 3),
-          ", rho = ", formatC(correlation_row$spearman_rho_WLEX, format = "f", digits = 3)
+          #"Non-corrected\nAll: Pearson, p = ", formatC(correlation_row$pearson_p_all, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_all, format = "f", digits = 3),
+          
+          "All: Spearman, p = ", formatC(correlation_row$spearman_p_all, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_all, format = "f", digits = 3),
+          #"\nHED: Pearson, p = ", formatC(correlation_row$pearson_p_HED, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_HED, format = "f", digits = 3),
+          "\nHED: Spearman, p = ", formatC(correlation_row$spearman_p_HED, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_HED, format = "f", digits = 3),
+          #"\nDIWL: Pearson, p = ", formatC(correlation_row$pearson_p_DIWL, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_DIWL, format = "f", digits = 3),
+          "\nDIWL: Spearman, p = ", formatC(correlation_row$spearman_p_DIWL, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_DIWL, format = "f", digits = 3),
+          #"\nWLEX: Pearson, p = ", formatC(correlation_row$pearson_p_WLEX, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_WLEX, format = "f", digits = 3),
+          "\nWLEX: Spearman, p = ", formatC(correlation_row$spearman_p_WLEX, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_WLEX, format = "f", digits = 3),
+          "\n*****p-values are not adjusted*****"
         ),
-        size = 1.8, hjust = 1.05, vjust = 1, alpha = 0.6
+        size = 3, hjust = 1.05, vjust = 1, alpha = 0.6
       )
       return(annotated_plot)
     }
@@ -1129,7 +1165,7 @@ correlation_change_plot <- function(correlation_df, mirage_ch_vars, correlation_
   )
 
   # Save the plot
-  ggsave(file_path, combined_plot, device = "jpeg", width = 10, height = 8, units = "in")
+  ggsave(file_path, combined_plot, device = "jpeg", width = 35, height = 25, units = "in")
 }
 ```
 
@@ -1146,7 +1182,7 @@ correlation_values_ch_class <- data.frame()
 
 # Loop over each lipid composition within each lipidclass
 unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
-for (lipid_class in unique_lipid_classes) {
+for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PE_PC ratio"]) {
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
   for (lipid_composition in lipid_compositions_in_class) {
     # Organize data
@@ -1169,7 +1205,7 @@ for (lipid_class in unique_lipid_classes) {
 #      savePathClassComp,
 #      lipid_class,
 #      lipid_composition
-#    )
+#   )
   }
 }
 
@@ -1187,7 +1223,7 @@ for (lipid_class in unique_lipid_classes) {
   # Calculate correlations for changes
   correlation_values_ch_class <- rbind(correlation_values_ch_class, correlation_of_change(correlation_df, lipidomicsDF, mirage_data_long_ch, mirage_ch_vars, lipid_class, lipidcomposition = NULL))
 
-# # Plot data - un-comment if to be used again
+ # Plot data - un-comment if to be used again
 #  correlation_change_plot(
 #    correlation_df,
 #    mirage_ch_vars,
@@ -1197,6 +1233,24 @@ for (lipid_class in unique_lipid_classes) {
 #    lipidcomposition = NULL
 #  )
 }
+
+
+## SAVE AND LOAD VARIABLES TO NOT HAVE TO RERUN ALL THE ANALYSIS
+# Define the path to save/load folder
+ save_variable_path <- "/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/saved variables/"
+# 
+# # Specify filenames for each variable
+ file_correlation_values_ch_composition <- paste0(save_variable_path, "correlation_values_ch_composition.rds")
+ file_correlation_values_ch_class <- paste0(save_variable_path, "correlation_values_ch_class.rds")
+# 
+ # Save the variables
+# saveRDS(correlation_values_ch_composition, file = file_correlation_values_ch_composition)
+ #saveRDS(correlation_values_ch_class, file = file_correlation_values_ch_class)
+
+# OR LOAD VARIABLES
+correlation_values_ch_composition <- readRDS(file = file_correlation_values_ch_composition)
+correlation_values_ch_class <- readRDS(file = file_correlation_values_ch_class)
+
 ```
 
 ## Heatmap & vulcano plot
@@ -1238,8 +1292,7 @@ long_format_cor <- long_format_cor %>%
 
 # Use the 'lipid' values to filter long_format_p_adj.non
 long_format_p_adj.non <- long_format_p_adj.non %>%
-  filter(lipid %in% long_format_cor$lipid)
-
+  filter(lipid  %in% long_format_cor$lipid)
 
 # Adjust p-values by group
 long_format_p_adj.gr <- long_format_p_adj.non %>%
@@ -1247,24 +1300,41 @@ long_format_p_adj.gr <- long_format_p_adj.non %>%
   mutate(p_value = p.adjust(p_value, method = "BH"))%>%
   ungroup()
 
-# adjust p-values by all columns
-long_format_p_adj.all <- long_format_p_adj.non %>%
-  mutate(p_value = p.adjust(p_value, method = "BH"))
+# adjust p-values by group and lipidClass
+# First reintroduce lipidclass
+long_format_p_adj.gr.class <- long_format_p_adj.non %>%
+  mutate(lipidClass = sub("^(\\S+)\\s.*$", "\\1", lipid)) %>%
+  group_by(test_against, spearman_type, lipidClass) %>%
+  mutate(p_value = p.adjust(p_value, method = "BH")) %>%
+  ungroup()
+
+
+
 ```
 
 ### Vulcano plot
 
 ```{r}
-vulcano_changes <- function(){
+vulcano_changes <- function(input_vars, save_sub_path, spearman_types_select){
 ### Join p-values adjusted for all lipid species and join with the rho values
 # Adjust names in the spearman_type to facilitate merge
 # p-val df
-vulc.pvals <- long_format_p_adj.gr
+
+# Filter rows where 'test_against' column values are in 'input_vars'
+vulc.pvals <- long_format_p_adj.gr[long_format_p_adj.gr$test_against %in% input_vars, ]
+# Filter out only the spearman groups specified
+vulc.pvals <- vulc.pvals[sub("spearman_p_", "", vulc.pvals$spearman_type) %in% spearman_types_select, ]
+
 vulc.pvals$spearman_type <- gsub("spearman_p_", "", vulc.pvals$spearman_type)
 
 # Correlation df
-vulc.cor <- long_format_cor
+vulc.cor <- long_format_cor[long_format_cor$test_against %in% input_vars, ]
+# Filter out only the spearman groups specified
+vulc.cor <- vulc.cor[sub("spearman_rho_", "", vulc.cor$spearman_type) %in% spearman_types_select, ]
+
 vulc.cor$spearman_type <- gsub("spearman_rho_", "", vulc.cor$spearman_type)
+
+
 
 # make into single dataframe
 vulc_data <- vulc.cor %>%
@@ -1298,42 +1368,62 @@ vulc_plot <- ggplot(vulc_data, aes(x = rho_value, y = -log10(p_value))) +
   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.2) +
   geom_point(aes(color = test_against, alpha = p_value < 0.05)) +
   scale_color_manual(values = colors_for_tests) +
-  scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.12)) + # TRUE for significant, FALSE for not
-  geom_text_repel(aes(label = ifelse(p_value < 0.05 & abs(rho_value) > threshold_rho, identifier, "")),
-                  box.padding = 0.35, point.padding = 0.5,
-                  size = 3, segment.color = 'grey50') +
+  scale_alpha_manual(values = c(`TRUE` = 1, `FALSE` = 0.12)) +
   theme_minimal() +
-  labs(title = "Correlation between changes in lipids and changes in clinical endpoints", x = "Spearman rho", y = "-log10 P-value") +
-  xlim(-1,1) +
-  guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) # Hide the alpha legend and fix the color legend
+  labs(title = paste0("Correlation: ", save_sub_path),
+       x = "Spearman rho", y = "-log10 P-value") +
+  theme(plot.title = element_text(hjust = 0.5))+
+   geom_text_repel(aes(label = ifelse(p_value < 0.05 & abs(rho_value) > threshold_rho, identifier, "")),
+                  box.padding = 0.45, point.padding = 0.5, max.overlaps = 100,
+                  size = 2, segment.color = 'grey50') +
 
-## Display the plot
-#print(vulc_plot)
+  guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) 
 
 # Save the plot
-ggsave("/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/correlations in changes/vulcano/volcano.jpg", plot = vulc_plot, width = 12, height = 8, dpi = 400)
+save_path <- paste0("/Users/au309166/Library/CloudStorage/OneDrive-Aarhusuniversitet/Forskning/Projects/LipidomicsMIRAGE/outputs/correlations in changes/vulcano/", save_sub_path, ".jpg")
+
+ggsave(save_path, plot = vulc_plot, width = 14, height = 10, dpi = 400)
 }
 
-# Run function
-vulcano_changes()
+spearman_types_select.all <- c("all") # use all, HED, DIWL and WLEX
+spearman_types_select.groups <- c("all", "HED", "DIWL", "WLEX") # use all, HED, DIWL, WLEX
+
+# Loop through each main category in mirage_ch_vars
+for (i in seq_along(mirage_ch_vars)) {
+    # Print the name of the current list being processed
+    list_name <- names(mirage_ch_vars)[i]
+    print(paste("Processing list:", list_name))
+
+    # Use lapply to iterate over each sublist in the current category
+    names_to_use <- unlist(lapply(mirage_ch_vars[[i]], function(sublist) {
+        # Check if the sublist is long enough to have at least the first element
+        if(length(sublist) >= 1) {
+            # Replace '_pre' with '_ch' in the first element
+            return(gsub("_pre", "_ch", sublist[1]))
+        } else {
+            return(NA)  # Return NA if the sublist does not have at least one element
+        }
+      
+    }))
+    vulcano_changes(input_vars = names_to_use, save_sub_path = paste0("all/", list_name), spearman_types_select = spearman_types_select.all)
+    vulcano_changes(input_vars = names_to_use, save_sub_path = paste0("groups/", list_name), spearman_types_select = spearman_types_select.groups)
+}
+# Add groups_to_plot
 ```
 
-### Heatmap
-
+### Heatmap CORRECT TO MAKE FOR EVERY GROUP!
 ```{r}
 # Group lipidclasses to make multiple, clean heatmaps
-# Define lipid groups
 lipids_groups <- list(
   gr_tag = c("TAG"),  # Triacylglycerols
   gr_dg_ac = c("1,2-DG", "1,3-DG", "AC"),  # Diglycerides and Acyl carnitines
-  gr_pc = c("PC"),  # Phosphatidylcholines
+  gr_pc = c("PC", "PE_PC ratio"),  # Phosphatidylcholines and ratio
   gr_pe = c("PE"),  # Phosphatidylethanolamines
   gr_sphingolipids = c("SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingolipids: Sphingomyelins, Sphingosines, Ceramides and derivatives
   gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS"),  # Lysophospholipids
   gr_pa_ps = c("PA", "PS"),  # Group combining Phosphatidic acids and Phosphatidylserines
   gr_pg_pi = c("PG", "PI")  # Group combining Phosphatidylglycerols and Phosphatidylinositols
 )
-
 
 # Define function to filter and sort lipids based on group names
 filter_lipid_group_base <- function(data_frame, lipid_group) {
@@ -1350,7 +1440,7 @@ filter_lipid_group_base <- function(data_frame, lipid_group) {
 # p-values
 long_format_p_adj_groups.non <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.non)
 long_format_p_adj_groups.gr <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.gr)
-long_format_p_adj_groups.all <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.all)
+long_format_p_adj_groups.all <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_p_adj.gr.class)
 # correlations
 long_format_corr_groups <- lapply(lipids_groups, filter_lipid_group_base, data_frame = long_format_cor)
 
@@ -1387,27 +1477,6 @@ transform_p_values <- function(df) {
 long_format_p_adj_log10.non <- lapply(long_format_p_adj_groups.non, transform_p_values)
 long_format_p_adj_log10.gr <- lapply(long_format_p_adj_groups.gr, transform_p_values)
 long_format_p_adj_log10.all <- lapply(long_format_p_adj_groups.all, transform_p_values)
-
-
-# # Make p-values positive or negative based on positive or negative correlation
-# adjust_p_values_based_on_correlation <- function(df_p, df_cor) {
-#   # Ensure the correlation dataframe has the unique_test_against column
-#   df_cor <- df_cor %>%
-#     mutate(unique_test_against = paste0(sub("spearman_rho_", "", spearman_type), "_", test_against))
-#   
-#   # Perform the left join, p-value adjustment, and selection
-#   df_p <- df_p %>%
-#     left_join(select(df_cor, lipid, unique_test_against, rho_value), by = c("lipid", "unique_test_against")) %>%
-#     mutate(p_log10 = ifelse(rho_value < 0, -p_log10, p_log10)) %>%
-#     select(-rho_value)
-#   
-#   return(df_p)
-# }
-# # Apply the adjustment function to each group's data frames in parallel
-# long_format_p_adj_groups.non <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.non, long_format_corr_groups)
-# long_format_p_adj_groups.gr <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.gr, long_format_corr_groups)
-# long_format_p_adj_groups.all <- Map(adjust_p_values_based_on_correlation, long_format_p_adj_log10.all, long_format_corr_groups)
-
  
 # Define a function to spread the data and convert it to a matrix
 spread_and_convert_matrix <- function(df, unitName) {
@@ -1502,10 +1571,14 @@ pdf(pdf_path, width = 12, height = 14)
 # Draw your heatmaps. Each call to draw() will create a new page in the PDF for each heatmap
 for (i in 1:length (hm)){
   draw(hm[[i]])
+  
+dev.off()
 }
 
-# Don't forget to close the device
-dev.off()
+
+
+
+
 
 ```
 
@@ -1643,12 +1716,14 @@ Analyse correlation between variables from the mirage dataset and the lipidomics
 # run function test
 # Function to prepare data
 prepare_and_combine_crossSection <- function(lipidomicsData, mirageData, lipidclass, lipidcomposition) {
-  # Filter and prepare lipidomics data
-  if (is.null(lipidcomposition)) {
+  
+  # Filter and prepare lipidomics data. If composition is empty or if NA as PE/PC ratio is NA.
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+  lipidomics_selected <- filter(lipidomicsData, lipidClass == lipidclass, lipidComposition == lipidcomposition)
+} else {
     lipidomics_selected <- filter(lipidomicsData, lipidClass == lipidclass)
-  } else {
-    lipidomics_selected <- filter(lipidomicsData, lipidClass == lipidclass, lipidComposition == lipidcomposition)
-  }
+}
+  
   
         # Remove lipid composition within lipid class if fewer non-zero values than the analysis_cutoff. Only for lipidComposition
   non_zero_rows <- lipidomics_selected %>%
@@ -1725,13 +1800,12 @@ lipidomics_wide <- lipidomics_wide %>%
 # Define a function to compute correlations of change
 correlation_cross_sectional <- function(correlation_df, lipidomicsDF, mirage_variables_of_interest, lipidclass, lipidcomposition) {
 
-      # Determine the lipid name based on the presence of lipid composition
-    if (is.null(lipidcomposition)) {
-      lipidName <- lipidclass
-    } else {
-      lipidName <- paste0(lipidclass, " ", lipidcomposition)
-    }
-  
+ # Determine the lipid name based on the presence of lipid composition   
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+  lipidName <- paste0(lipidclass, " ", lipidcomposition)
+} else {
+    lipidName <- lipidclass
+}
   
   # Make Na if too few values determined from prepare data function
   if (correlation_df$skipAnalysis[[1]] == TRUE) {
@@ -1782,62 +1856,66 @@ correlation_cross_sectional <- function(correlation_df, lipidomicsDF, mirage_var
 
   
   # Loop over every mirage variables of interest
-  for (i in seq_along(mirage_variables_of_interest[[1]])) {
-    # Manipulate current variable name
-    test_against_name <- mirage_variables_of_interest[[1]][i]
-    test_against_name_clean <- sub("_pre$", "", test_against_name)
-
-    # Add new row to output df
-    correlation_results <- add_row(correlation_results)
-
-    # Identify the index of current row
-    current_row_index <- nrow(correlation_results)
-
-    # Assign lipid name and test against to last row
-    correlation_results$lipid[current_row_index] <- lipidName
-    correlation_results$test_against[current_row_index] <- test_against_name
-
-    # Use pmol_mg_ch for composition within group. Use lipid z normalization for lipid class.
-    if (is.null(lipidcomposition)) {
-      lipid_unit <- "pmol_mg_id"
-    } else {
-      lipid_unit <- "pmol_mg_Pre"
-    }
-
-    ### REMOVE NA
+  for (i in seq_along(mirage_variables_of_interest)) {
+    for (j in seq_along(mirage_variables_of_interest[[i]])){
     
-    # Perform Pearson and Spearman correlations for all data
-    result_pearson_all <- correlation(correlation_df, select = lipid_unit, select2 = test_against_name, method = "pearson", p_adjust = "none", ci = 0.95)
-    result_spearman_all <- correlation(correlation_df, select = lipid_unit, select2 = test_against_name, method = "spearman", p_adjust = "none", ci = 0.95)
+      # Manipulate current variable name
+      test_against_name <- mirage_variables_of_interest[[i]][[j]][1]
+      test_against_name_clean <- sub("_pre$", "", test_against_name)
 
-
-    # Assign results the the results df
-    correlation_results$pearson_r_all[current_row_index] <- result_pearson_all$r
-    correlation_results$pearson_p_all[current_row_index] <- result_pearson_all$p
-    correlation_results$spearman_rho_all[current_row_index] <- result_spearman_all$r
-    correlation_results$spearman_p_all[current_row_index] <- result_spearman_all$p
-
-    # Calculate correlations for each group
-    for (current_group in unique(correlation_df$group)) {
-      # Filter the dataframe for the current group
-      correlation_df_group <- filter(correlation_df, group == current_group)
-
-
-      # Perform Pearson and Spearman correlations for the current group
-      result_pearson_group <- correlation(correlation_df_group, select = lipid_unit, select2 = test_against_name, method = "pearson", p_adjust = "none", ci = 0.95)
-      result_spearman_group <- correlation(correlation_df_group, select = lipid_unit, select2 = test_against_name, method = "spearman", p_adjust = "none", ci = 0.95)
-
-      # Dynamic assignment of results based on the current group
-      pearson_r_col <- paste0("pearson_r_", current_group)
-      pearson_p_col <- paste0("pearson_p_", current_group)
-      spearman_rho_col <- paste0("spearman_rho_", current_group)
-      spearman_p_col <- paste0("spearman_p_", current_group)
-
-      correlation_results[[pearson_r_col]][current_row_index] <- result_pearson_group$r
-      correlation_results[[pearson_p_col]][current_row_index] <- result_pearson_group$p
-      correlation_results[[spearman_rho_col]][current_row_index] <- result_spearman_group$r
-      correlation_results[[spearman_p_col]][current_row_index] <- result_spearman_group$p
+      # Add new row to output df
+      correlation_results <- add_row(correlation_results)
+  
+      # Identify the index of current row to be able to append data to it
+      current_row_index <- nrow(correlation_results)
+  
+      # Assign lipid name and test against to last row
+      correlation_results$lipid[current_row_index] <- lipidName
+      correlation_results$test_against[current_row_index] <- test_against_name
+  
+      # Choose the correct unit for lipid class and lipid comp
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+          lipid_unit <- "pmol_mg_Pre"
+} else {
+    lipid_unit <- "pmol_mg_id"
+}
+      
+      
+      ### REMOVE NA NEEDED?
+      
+      # Perform Pearson and Spearman correlations for all data
+      result_pearson_all <- correlation(correlation_df, select = lipid_unit, select2 = test_against_name, method = "pearson", p_adjust = "none", ci = 0.95)
+      result_spearman_all <- correlation(correlation_df, select = lipid_unit, select2 = test_against_name, method = "spearman", p_adjust = "none", ci = 0.95)
+  
+  
+      # Assign results the the results df
+      correlation_results$pearson_r_all[current_row_index] <- result_pearson_all$r
+      correlation_results$pearson_p_all[current_row_index] <- result_pearson_all$p
+      correlation_results$spearman_rho_all[current_row_index] <- result_spearman_all$r
+      correlation_results$spearman_p_all[current_row_index] <- result_spearman_all$p
+  
+      # Calculate correlations for each group
+      for (current_group in unique(correlation_df$group)) {
+        # Filter the dataframe for the current group
+        correlation_df_group <- filter(correlation_df, group == current_group)
+  
+  
+        # Perform Pearson and Spearman correlations for the current group
+        result_pearson_group <- correlation(correlation_df_group, select = lipid_unit, select2 = test_against_name, method = "pearson", p_adjust = "none", ci = 0.95)
+        result_spearman_group <- correlation(correlation_df_group, select = lipid_unit, select2 = test_against_name, method = "spearman", p_adjust = "none", ci = 0.95)
+  
+        # Dynamic assignment of results based on the current group
+        pearson_r_col <- paste0("pearson_r_", current_group)
+        pearson_p_col <- paste0("pearson_p_", current_group)
+        spearman_rho_col <- paste0("spearman_rho_", current_group)
+        spearman_p_col <- paste0("spearman_p_", current_group)
+  
+        correlation_results[[pearson_r_col]][current_row_index] <- result_pearson_group$r
+        correlation_results[[pearson_p_col]][current_row_index] <- result_pearson_group$p
+        correlation_results[[spearman_rho_col]][current_row_index] <- result_spearman_group$r
+        correlation_results[[spearman_p_col]][current_row_index] <- result_spearman_group$p
     }
+  }
   }
   }
   return(correlation_results)
@@ -1852,28 +1930,24 @@ correlation_cross_sectional <- function(correlation_df, lipidomicsDF, mirage_var
 ```{r}
 correlation_crossSectional_plot <- function(correlation_df, mirage_crossSectional_vars, correlation_results, savePath, lipidclass, lipidcomposition) {
   # Make lipid name
-  if (is.null(lipidcomposition)) {
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
+  lipidName <- paste0(lipidclass, " ", lipidcomposition)
+} else {
     lipidName <- lipidclass
-  } else {
-    lipidName <- paste0(lipidclass, " ", lipidcomposition)
-  }
-
+}
+  
   # Only plot if there's data to plot
   if (!all(is.na(correlation_df$pmol_mg_Pre))) {
     # Extract the first element from each sub-list, replace "pre" with "ch", and compile into a single vector
-    plotVars <- unlist(mirage_crossSectional_vars)
+    plotVars <- unlist(unlist(lapply(mirage_crossSectional_vars, function(category) {
+    lapply(category, function(item) item[1])
+    }), recursive = FALSE), use.names = FALSE)
+    
 
     # If lipidcomposition is null, then only plot class
-    if (is.null(lipidcomposition)) {
-      # Add lipid variable to plotVars
-      # Make plot with log2 fold change if only class is available
-      plotVars <- c("pmol_mg_id", plotVars)
-
-      pm <- ggpairs(correlation_df,
-        mapping = aes(color = group),
-        columns = plotVars
-      )
-    } else {
+    
+    # Filter and prepare lipidomics data
+if (!is.null(lipidcomposition) && length(lipidcomposition) > 0 && !any(is.na(lipidcomposition))) {
       # Add lipid variable to plotVars
       plotVars <- c("pmol_mg_Pre", plotVars)
 
@@ -1883,14 +1957,22 @@ correlation_crossSectional_plot <- function(correlation_df, mirage_crossSectiona
         columns = plotVars,
         lower = list(continuous = wrap("smooth", method = "none", se = FALSE))
       )
-    }
+} else {
+    # Add lipid variable to plotVars
+      # Make plot with log2 fold change if only class is available
+      plotVars <- c("pmol_mg_id", plotVars)
 
+      pm <- ggpairs(correlation_df,
+        mapping = aes(color = group),
+        columns = plotVars
+      )
+}
+    
     # Take plots from the ggpairs plot and add to list
     plotList <- list()
     for (i in 2:(pm$ncol)) {
       plotList[[i - 1]] <- pm[i, 1]
     }
-
 
     # Add annotation to plots
     addCorrelationAnnotation <- function(plot, correlation_results, lipidName, plotVar) {
@@ -1958,7 +2040,8 @@ correlation_results_crossSection_class <- data.frame()
 
 # Loop over each lipid composition within each lipidclass
 unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
-for (lipid_class in unique_lipid_classes) {
+
+for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PE_PC ratio"]) {
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
   for (lipid_composition in lipid_compositions_in_class) {
     # Select and prepare data for analysis
@@ -2218,7 +2301,7 @@ for (i in 1:nrow(plot_nonadj_vs_adj)) {
 }
 ```
 
-# Pre-post group changes for lipids
+# Pre-post analysis
 
 ## Mixed models
 
@@ -2683,7 +2766,7 @@ vulc_plot <- ggplot(vulc_slope, aes(x = ch_pp, y = -log10(p_value))) +
                   size = 3, segment.color = 'grey50') +
   theme_minimal() +
   labs(title = "Differences in pre-to-post slopes between groups", x = "Delta slope (pp)", y = "-log10 P-value") +
-  xlim(-1500,1500)+
+  xlim(-200,200)+
   guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) # Hide the alpha legend and fix the color legend
 
 ## Display the plot
@@ -2723,7 +2806,7 @@ vulc_plot <- ggplot(vulc_prePost, aes(x = log2foldch, y = -log10(p_value))) +
                   size = 3, segment.color = 'grey50') +
   theme_minimal() +
   labs(title = "Differences in pre-to-post", x = "log2fc", y = "-log10 P-value") +
-  xlim(-2,2)+
+  #xlim(-2,2)+
   guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) # Hide the alpha legend and fix the color legend
 
 ## Display the plot
@@ -2757,7 +2840,7 @@ pvals_df <- pvals_df[, common_cols, drop = FALSE]
 lipids_groups <- list(
   gr_tag = c("TAG"),  # Triacylglycerols
   gr_dg_ac = c("1,2-DG", "1,3-DG", "AC"),  # Diglycerides and Acyl carnitines
-  gr_pc = c("PC", "PE:PC ratio"),  # Phosphatidylcholines and ratio
+  gr_pc = c("PC", "PE_PC ratio"),  # Phosphatidylcholines and ratio
   gr_pe = c("PE"),  # Phosphatidylethanolamines
   gr_sphingolipids = c("SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingolipids: Sphingomyelins, Sphingosines, Ceramides and derivatives
   gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS"),  # Lysophospholipids
@@ -2970,7 +3053,7 @@ for (i in 1:nrow(cols_to_plot)) {
 ```
 
 ## Scatter plots
-
+### Lipid composition
 Composition scatter plot Data points above ULOQ and below LLOQ are marked with triangles for.
 
 ```{r}
@@ -3034,6 +3117,10 @@ mean_data_comp <- filtered_data %>%
       data = subset(filtered_data, within_threshold == 1), aes(y = pmol_mg), size = 3, shape = 25, color = "black", fill = "grey",
       alpha = 0.3, position = position_nudge(x = 0.03) # Down triangle for values below LLOQ
     ) +
+    geom_point(
+          data = subset(filtered_data, within_threshold == 3), aes(y = pmol_mg), size = 7, shape = 4, color = "black", fill = "grey",
+      alpha = 0.5, position = position_nudge(x = 0.03) # cross to signal outlier
+    ) +
     
     
       geom_line(data = mean_data_comp, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg, group = group),color = "black", linewidth = 1, position = position_nudge(x = 0.03)) +
@@ -3081,6 +3168,7 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
+### Lipid class
 Scatter plot for each lipid class based on absolute lipid class concentration
 
 ```{r}
@@ -3177,6 +3265,7 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
+### Z-score lipidClass
 Scatter plots of Z-score for each lipid class with lipid classes shown in different colors
 
 ```{r}
