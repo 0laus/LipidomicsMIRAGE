@@ -987,7 +987,330 @@ heatmap_pre_post_sat (result_data = est_and_p_mono_unsat, overall_title = "Mono 
 heatmap_pre_post_sat (result_data = est_and_p_poly_unsat, overall_title = "Poly unsaturated")
 ```
 
-## Make correlation statistics on change
+## Correlation of change
+```{r}
+# Function to prepare data
+prepare_and_combine_data <- function(lipidomicsData, pre_post_cols, mirageData, lipidclass, saturation_col) {
+ 
+# Filter lipidomics data
+    lipidomics_selected <- filter(lipidomicsData, lipidClass == lipidclass)
+  
+  # Select only the columns of interest before the pivot
+  lipidomics_filtered <- lipidomics_selected %>%
+    select(id, group, time, lipidClass, all_of(saturation_col))
+
+  # Pivot to wide format with specific naming for pre and post columns
+  lipidomics_wide <- lipidomics_filtered %>%
+    pivot_wider(names_from = time, values_from = all_of(saturation_col), names_prefix = "proportion_of_") %>%
+    relocate(id, .before = everything()) # Moves id to front
+
+  # Calculate delta value
+  lipidomics_wide$pp_change <- lipidomics_wide$proportion_of_Post - lipidomics_wide$proportion_of_Pre
+  
+  # Combine with mirageData based on id
+  combined_df <- left_join(mirageData, lipidomics_wide, by = "id")
+  
+    # Loop through all lists
+    for (j in 1:length(pre_post_cols)){
+      for (g in 1:length (pre_post_cols[[j]])){
+      pre_col <- pre_post_cols[[j]][[g]][1]
+      post_col <- pre_post_cols[[j]][[g]][2]
+      delta_col_name <- paste0(sub("_pre", "", pre_col), "_ch")
+    
+    # Calculate deltas
+    combined_df <- combined_df %>%
+      mutate(!!sym(delta_col_name) := as.numeric(.[[post_col]]) - as.numeric(.[[pre_col]]))
+      }
+      }
+# }
+  # Convert specified columns to factors and remove group
+  combined_df <- combined_df %>%
+    rename(group = group.x) %>%
+    # Assuming there's no need to keep the original 'group' from the second dataframe
+    select(-group.y) %>%
+    # Convert specified columns to factors
+    mutate(across(c(id, site, study_status, t2d_y_n, group), factor))
+  
+  return(combined_df)
+}
+
+
+
+################### STATISTICS
+
+
+# Define a function to compute correlations of change
+correlation_of_change <- function(correlation_df, lipidomicsData, mirage_data_long_ch, mirage_variables_of_interest, lipidclass) {
+
+# Define lipidname
+  lipidName <- lipidclass
+  
+# Define lipid unit
+  lipid_unit <- "pp_change"
+  
+  # Only run code if correlation df is not NA.
+  # If, Na, assign NA values to all correlation results
+  if (sum( !is.na(correlation_df[[lipid_unit]])) < analysis_cutoff){
+    
+       # Assign NA to all results
+  correlation_results <- data.frame(
+    lipid = lipidName,
+    test_against = NA,
+    pearson_r_all = NA,
+    pearson_p_all = NA,
+    spearman_rho_all = NA,
+    spearman_p_all = NA,
+    mixed_cor_all = NA,
+    mixed_p_all = NA,
+    pearson_r_HED = NA,
+    pearson_p_HED = NA,
+    spearman_rho_HED = NA,
+    spearman_p_HED = NA,
+    pearson_r_DIWL = NA,
+    pearson_p_DIWL = NA,
+    spearman_rho_DIWL = NA,
+    spearman_p_DIWL = NA,
+    pearson_r_WLEX = NA,
+    pearson_p_WLEX = NA,
+    spearman_rho_WLEX = NA,
+    spearman_p_WLEX = NA
+  )
+  } else {
+      
+   # Initialize an empty data frame to store correlation results
+  correlation_results <- data.frame(
+    lipid = character(),
+    test_against = character(),
+    pearson_r_all = numeric(),
+    pearson_p_all = numeric(),
+    spearman_rho_all = numeric(),
+    spearman_p_all = numeric(),
+    mixed_cor_all = numeric(),
+    mixed_p_all = numeric(),
+    pearson_r_HED = numeric(),
+    pearson_p_HED = numeric(),
+    spearman_rho_HED = numeric(),
+    spearman_p_HED = numeric(),
+    pearson_r_DIWL = numeric(),
+    pearson_p_DIWL = numeric(),
+    spearman_rho_DIWL = numeric(),
+    spearman_p_DIWL = numeric(),
+    pearson_r_WLEX = numeric(),
+    pearson_p_WLEX = numeric(),
+    spearman_rho_WLEX = numeric(),
+    spearman_p_WLEX = numeric()
+  )
+  
+  # Loop over every mirage variables of interest
+    for (j in 1:length(mirage_variables_of_interest)){
+      for (g in 1:length (mirage_variables_of_interest[[j]])){
+        test_against_name <- mirage_variables_of_interest[[j]][[g]][[1]]
+        test_against_name_clean <- sub("_pre$", "", test_against_name)
+        test_against_name <- sub("pre$", "ch", test_against_name)
+        
+
+    # Add new row to output df
+    correlation_results <- add_row(correlation_results)
+
+    # Identify the index of the current row
+    current_row_index <- nrow(correlation_results)
+
+    # Assign lipid name and test against to last row
+    correlation_results$lipid[current_row_index] <- lipidName
+    correlation_results$test_against[current_row_index] <- test_against_name
+      
+    # Perform Pearson and Spearman correlations for all data
+    result_pearson_all <- correlation(correlation_df, select = lipid_unit, select2 = test_against_name, method = "pearson", p_adjust = "none", ci = 0.95)
+    result_spearman_all <- correlation(correlation_df, select = lipid_unit, select2 = test_against_name, method = "spearman", p_adjust = "none", ci = 0.95)
+
+    # Assign results the the results df
+    correlation_results$pearson_r_all[current_row_index] <- result_pearson_all$r
+    correlation_results$pearson_p_all[current_row_index] <- result_pearson_all$p
+    correlation_results$spearman_rho_all[current_row_index] <- result_spearman_all$r
+    correlation_results$spearman_p_all[current_row_index] <- result_spearman_all$p
+
+    # Calculate correlations for each group
+    for (current_group in unique(correlation_df$group)) {
+      # Filter the dataframe for the current group
+      correlation_df_group <- filter(correlation_df, group == current_group)
+
+      # Perform Pearson and Spearman correlations for the current group
+      result_pearson_group <- correlation(correlation_df_group, select = lipid_unit, select2 = test_against_name, method = "pearson", p_adjust = "none", ci = 0.95)
+      result_spearman_group <- correlation(correlation_df_group, select = lipid_unit, select2 = test_against_name, method = "spearman", p_adjust = "none", ci = 0.95)
+
+      # Dynamic assignment of results based on the current group
+      pearson_r_col <- paste0("pearson_r_", current_group)
+      pearson_p_col <- paste0("pearson_p_", current_group)
+      spearman_rho_col <- paste0("spearman_rho_", current_group)
+      spearman_p_col <- paste0("spearman_p_", current_group)
+
+      correlation_results[[pearson_r_col]][current_row_index] <- result_pearson_group$r
+      correlation_results[[pearson_p_col]][current_row_index] <- result_pearson_group$p
+      correlation_results[[spearman_rho_col]][current_row_index] <- result_spearman_group$r
+      correlation_results[[spearman_p_col]][current_row_index] <- result_spearman_group$p
+    }
+
+    ### Below transformation to mixed model compatible format. Model is not run, as it does not work as intended, but structure may be relevant for future analysis.
+    # Merge this transformed subset with 'lipidomicsData' based on 'id' and 'time'
+    merged_data <- left_join(lipidomicsData, mirage_data_long_ch, by = c("id", "time"))
+
+    # Prepare lipidomics data
+    merged_data_filtered <- filter(merged_data, lipidClass == lipidclass)
+    
+    # Ensure 'time' and 'group' are factors
+    merged_data_filtered$time <- as.factor(merged_data_filtered$time)
+    merged_data_filtered$group <- as.factor(merged_data_filtered$group)
+
+    # Re-level 'time' so 'Pre' is the reference level
+    merged_data_filtered$time <- relevel(merged_data_filtered$time, ref = "Pre")
+
+    # Relevel 'group' so 'HED' is the reference level
+    merged_data_filtered$group <- relevel(merged_data_filtered$group, ref = "HED")
+
+    correlation_results$mixed_cor_all[current_row_index] <- NA
+    correlation_results$mixed_p_all[current_row_index] <- NA
+    
+  }
+    }
+  }
+  return(correlation_results)
+}
+
+
+#################### Scatter plot
+
+correlation_change_plot <- function(correlation_df, mirage_ch_vars, correlation_results, lipidclass, saturation_type) {
+  
+  
+  # Make lipid name
+    lipidName <- lipidclass
+  
+  # Only plot if there's data to plot
+  if (!all(is.na(correlation_df$pp_change))) {
+    # Extract the first element from each sub-list, replace "pre" with "ch", and compile into a single vector
+    plotVars <- unlist(unlist(lapply(mirage_ch_vars, function(category) {
+    lapply(category, function(item) sub("_pre", "_ch", item[1]))
+    }), recursive = FALSE), use.names = FALSE)
+    
+
+      plotVars <- c("pp_change", plotVars)
+
+      # Add lipid variable to plotVars
+      pm <- ggpairs(correlation_df,
+        mapping = aes(color = group),
+        columns = plotVars
+      )
+    
+    # Take plots from the ggpairs plot and add to list
+    plotList <- list()
+    for (i in 2:(pm$ncol)) {
+      plotList[[i - 1]] <- pm[i, 1]
+    }
+
+    # Add annotation to plots
+    addCorrelationAnnotation <- function(plot, correlation_results, lipidName, plotVar) {
+      # Get correlations for the correct lipid and test
+      correlation_row <- filter(correlation_results, lipid == lipidName & test_against == plotVar)
+      
+      
+      # Annotate plot with correlation information
+      annotated_plot <- plot + annotate("text",
+                                        x = Inf, y = Inf,
+                                        label = paste0(
+          #"Non-corrected\nAll: Pearson, p = ", formatC(correlation_row$pearson_p_all, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_all, format = "f", digits = 3),
+          
+          "All: Spearman, p = ", formatC(correlation_row$spearman_p_all, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_all, format = "f", digits = 3),
+          #"\nHED: Pearson, p = ", formatC(correlation_row$pearson_p_HED, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_HED, format = "f", digits = 3),
+          "\nHED: Spearman, p = ", formatC(correlation_row$spearman_p_HED, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_HED, format = "f", digits = 3),
+          #"\nDIWL: Pearson, p = ", formatC(correlation_row$pearson_p_DIWL, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_DIWL, format = "f", digits = 3),
+          "\nDIWL: Spearman, p = ", formatC(correlation_row$spearman_p_DIWL, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_DIWL, format = "f", digits = 3),
+          #"\nWLEX: Pearson, p = ", formatC(correlation_row$pearson_p_WLEX, format = "f", digits = 3),
+          #", r = ", formatC(correlation_row$pearson_r_WLEX, format = "f", digits = 3),
+          "\nWLEX: Spearman, p = ", formatC(correlation_row$spearman_p_WLEX, format = "f", digits = 3),
+          "    |    rho = ", formatC(correlation_row$spearman_rho_WLEX, format = "f", digits = 3),
+          "\n*****p-values are not adjusted*****"
+        ),
+        size = 3, hjust = 1.05, vjust = 1, alpha = 0.6
+      )
+      return(annotated_plot)
+    }
+
+
+    # Add annotations to all plots
+    for (j in 1:length(plotList)) {
+      plotList[[j]] <- addCorrelationAnnotation(plotList[[j]], correlation_results, lipidName, plotVars[j + 1])
+    }
+
+    # Combine all plots in plotList
+    combined_plot <- plotList[[1]]
+    for (i in 2:length(plotList)) {
+      combined_plot <- combined_plot + plotList[[i]]
+    }
+
+    # Add title to plot
+    combined_plot <- combined_plot + plot_annotation(title = lipidName, theme = theme(plot.title = element_text(hjust = .5, size = 25)))
+  } else {
+    combined_plot <- plot.new()
+    title(main = paste("No data for", lipidName))
+  }
+
+    savePath <- paste0(getwd(), "/outputs/saturation/change correlations/scatter/", saturation_type, "/")
+    
+  # Specify the file path
+  file_path <- paste0(
+    savePath,
+    gsub("/", "_", gsub(":", ",", lipidName)), ".jpeg"
+  )
+
+  # Save the plot
+  ggsave(file_path, combined_plot, device = "jpeg", width = 35, height = 25, units = "in")
+}
+
+
+#################### RUN FUNCTION
+# Initialize
+correlation_values_ch_saturation <- data.frame()
+
+######## IN LOOP
+for (saturation_types in c("sat_proportion", "unsat_proportion", "unsat_mono_proportion", "unsat_poly_proportion")){
+
+ #Loop over each lipid class and make plots
+ for (lipid_class in unique_lipid_classes[unique_lipid_classes != "PE_PC ratio"]) {
+   # Organize data
+   correlation_df <- prepare_and_combine_data(
+     lipidomicsData = lipidomicsDF_saturation,
+     pre_post_cols = mirage_ch_vars,
+     mirageData = mirage_data,
+     lipidclass = lipid_class,
+     saturation_col = saturation_types ### <- Make loop over this!
+   )
+ 
+   # Calculate correlations for changes
+   correlation_values_ch_saturation <- rbind(correlation_values_ch_saturation, correlation_of_change(
+  correlation_df = correlation_df,
+  lipidomicsData = lipidomicsDF_saturation,
+  mirage_data_long_ch = mirage_data_long_ch,
+  mirage_variables_of_interest = mirage_ch_vars,
+  lipidclass = lipid_class))
+   
+   
+# Plot data - un-comment if to be used again
+  correlation_change_plot(
+    correlation_df = correlation_df,
+    mirage_ch_vars = mirage_ch_vars,
+    correlation_results = correlation_values_ch_saturation,
+    lipidclass = lipid_class,
+    saturation_type = saturation_types
+  )
+}}
+
+```
 
 
 
