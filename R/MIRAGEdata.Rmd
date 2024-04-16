@@ -557,7 +557,6 @@ mixedmodel_pre_post_sat <- function(dataset, response_var, lipidclass, lipidcomp
   # Filter dataset
   data_to_model <- filter(dataset, lipidClass == lipidclass)
 
-  # browser()
   
     # Check number of non-zero rows
   non_zero_rows <- data_to_model %>% 
@@ -804,7 +803,7 @@ plot <- ggplot(filtered_data, aes(
 
   # Define the filename and save the plot
   filename <- paste0(
-    getwd() ,"/outputs/saturation/pre-post/",
+    getwd() ,"/outputs/saturation/pre-post/scatter/",
     save_folder, "/",
     gsub(" ", "_", lipid_class), ".jpg"
   )
@@ -832,11 +831,13 @@ for (lipid_class in unique_lipid_classes) {
 
 ### Heat map
 ```{r}
-pvals_df <- est_and_p_sat$p.vals
-estimates_df <- est_and_p_sat$estimates
-sat_type <- "sat_proportion"
 
-
+heatmap_pre_post_sat <- function(result_data, overall_title){
+  
+  
+  pvals_df <- result_data$p.vals
+  estimates_df <- result_data$estimates
+  
 # Select the specified columns for hm_data.p-vals matrix
 pvals_df <- pvals_df[ , c("lipid", "Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
                                "Pre WLEX - Post WLEX (corrected)", "Pre - Post : HED - DIWL (corrected)",
@@ -961,18 +962,29 @@ for (i in 1:length(lipids_groups)) {
 }
 
 # Define the path and name of your PDF file
-pdf_path <- paste0( getwd(), "/outputs/saturation/heatmap/heatmap.pdf")
+pdf_path <- paste0( getwd(), "/outputs/saturation/pre-post/heatmap/", overall_title, ".pdf")
 
 # Open a PDF device
 pdf(pdf_path, width = 8, height = 10)
 
 # Draw your heatmaps. Each call to draw() will create a new page in the PDF for each heatmap
 for (i in 1:length (hm)){
-  draw(hm[[i]])
+  draw(hm[[i]], padding = unit(c(0, 0, 10, 0), "mm"))
 }
+
+# Add a common title
+grid.text(overall_title, x = unit(0.5, "npc"), y = unit(0.98, "npc"), 
+          gp = gpar(fontsize = 14, fontface = "bold"))
 
 # Don't forget to close the device
 dev.off()
+}
+
+# Run function
+heatmap_pre_post_sat (result_data = est_and_p_sat, overall_title = "Saturated")
+heatmap_pre_post_sat (result_data = est_and_p_unsat, overall_title = "Unsaturated")
+heatmap_pre_post_sat (result_data = est_and_p_mono_unsat, overall_title = "Mono unsaturated")
+heatmap_pre_post_sat (result_data = est_and_p_poly_unsat, overall_title = "Poly unsaturated")
 ```
 
 ## Make correlation statistics on change
