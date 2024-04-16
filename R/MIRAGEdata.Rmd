@@ -257,9 +257,17 @@ lipidomicsDF_saturation <- lipidomicsDF %>%
 lipidomicsDF_saturation <- lipidomicsDF_saturation %>%
   rowwise() %>% 
   mutate(
-    unsat_sat_ratio = sum(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat1_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg,class_sat_pmol_mg, na.rm = TRUE) / sum(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat1_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg,class_sat_pmol_mg, class_sat_pmol_mg, na.rm = TRUE),
-ether_bond_ratio = class_ether_pmol_mg / sum(class_no_ether_pmol_mg, class_ether_pmol_mg, na.rm = TRUE)) %>% 
-         ungroup()
+    unsat_proportion = sum(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat3_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg, na.rm = TRUE) / sum(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat3_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg,class_sat_pmol_mg, na.rm = TRUE),
+    
+    sat_proportion = sum(class_sat_pmol_mg, na.rm = TRUE) / sum(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat3_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg, class_sat_pmol_mg, na.rm = TRUE),
+    
+    unsat_mono_proportion = sum(class_unsat1_pmol_mg, na.rm = TRUE) / sum(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat3_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg, class_sat_pmol_mg, na.rm = TRUE),
+    
+    unsat_poly_proportion = sum(class_unsat2_pmol_mg, class_unsat3_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg, na.rm = TRUE) / sum(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat3_pmol_mg, class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg, class_sat_pmol_mg, na.rm = TRUE),
+    
+    
+    ether_bond_proportion = sum(class_ether_pmol_mg, rm.na = TRUE) / sum(class_no_ether_pmol_mg, class_ether_pmol_mg, na.rm = TRUE)
+  )
 
          
 # # Check sum of pmol_mg
@@ -270,7 +278,7 @@ ether_bond_ratio = class_ether_pmol_mg / sum(class_no_ether_pmol_mg, class_ether
 #                                class_sat_pmol_mg), na.rm = TRUE)) %>%
 #   ungroup()
 # 
- View(lipidomicsDF_saturation)
+  #View(lipidomicsDF_saturation)
 ```
 
 **Add PE/PC ratio**
@@ -533,12 +541,13 @@ mirage_data_long_ch <- mirage_data_long_ch %>%
 ```
 
 
+
 # Saturation analysis
 
-## Pre-post mixed model
+## Pre-post
+### Mixed model
 Should be identical to how statistics are calculated for lipidclass.
   Data must be condensed to not include lipidComp, as this will give duplicates
-
 
 ```{r}
 # Set the max number of observations that the emmeans package will handle. Lower number shorter computation times, larger number, more precise CI and p-value estimates
@@ -548,7 +557,19 @@ mixedmodel_pre_post_sat <- function(dataset, response_var, lipidclass, lipidcomp
   # Filter dataset
   data_to_model <- filter(dataset, lipidClass == lipidclass)
 
- 
+  # browser()
+  
+    # Check number of non-zero rows
+  non_zero_rows <- data_to_model %>% 
+    filter(!!sym(response_var) > 0) %>% 
+    nrow()
+  
+  # only proceed if number of non zero rows is above cutoff
+  if (non_zero_rows < analysis_cutoff){
+    return(list(estimates = NA, pvals = NA))
+  } else {
+  
+  
   # Prepare factors
   data_to_model$group <- factor(data_to_model$group, levels = c("HED", "DIWL", "WLEX"))
   data_to_model$time <- factor(data_to_model$time, levels = c("Pre", "Post"))
@@ -587,32 +608,143 @@ mixedmodel_pre_post_sat <- function(dataset, response_var, lipidclass, lipidcomp
       return(list(estimates = NA, pvals = NA))
     }
   )
-}
-
-
+  }
+  }
+  # RUN FUNCTION
 # Use map to iterate over lipid classes
-result.lipid.pre_post_sat.class <- map(unique_lipid_classes, ~ mixedmodel_pre_post_sat(lipidomicsDF_saturation, "unsat_sat_ratio", .x))
+
+# Saturated
+result.lipid.pre_post_sat <- map(unique_lipid_classes, ~ mixedmodel_pre_post_sat(lipidomicsDF_saturation, "sat_proportion", .x))
+# Unsaturated
+result.lipid.pre_post_unsat <- map(unique_lipid_classes, ~ mixedmodel_pre_post_sat(lipidomicsDF_saturation, "unsat_proportion", .x))
+# Mono unsaturated
+result.lipid.pre_post_mono_unsat <- map(unique_lipid_classes, ~ mixedmodel_pre_post_sat(lipidomicsDF_saturation, "unsat_mono_proportion", .x))
+# Poly unsaturated
+result.lipid.pre_post_poly_unsat <- map(unique_lipid_classes, ~ mixedmodel_pre_post_sat(lipidomicsDF_saturation, "unsat_poly_proportion", .x))
+
 
 # Naming the results list
-names(result.lipid.pre_post_sat.class) <- unique_lipid_classes
+names(result.lipid.pre_post_sat) <- unique_lipid_classes
+names(result.lipid.pre_post_unsat) <- unique_lipid_classes
+names(result.lipid.pre_post_mono_unsat) <- unique_lipid_classes
+names(result.lipid.pre_post_poly_unsat) <- unique_lipid_classes
+
+
+####### Make data ready for plotting
+
+
+prepare_sat_data_for_plotting <- function(result_data) {
+  pvals_df <- data.frame()
+  est_df <- data.frame()
+
+  contrasts_prepost <- c("Pre HED - Post HED", "Pre DIWL - Post DIWL", "Pre WLEX - Post WLEX")
+  contrasts_slope <- c("Pre - Post : HED - DIWL", "Pre - Post : HED - WLEX", "Pre - Post : DIWL - WLEX")
+
+  for (test_name in names(result_data)) {
+    # Check if prepost_results and slope_results are not NULL
+    if (!is.null(result_data[[test_name]]$prepost_results)) {
+      prepost_results <- result_data[[test_name]]$prepost_results
+    } else {
+      prepost_results <- data.frame(contrast = character(), p.value = numeric())
+    }
+
+    if (!is.null(result_data[[test_name]]$slope_results)) {
+      slope_results <- result_data[[test_name]]$slope_results
+    } else {
+      slope_results <- data.frame(contrast = character(), p.value = numeric())
+    }
+
+    # Proceed with extraction
+    prepost_pvals <- sapply(contrasts_prepost, function(c) {
+      filtered <- prepost_results %>%
+        filter(contrast == c)
+      if (nrow(filtered) > 0) filtered$p.value[1] else NA
+    }, USE.NAMES = TRUE)
+
+    slope_pvals <- sapply(contrasts_slope, function(c) {
+      filtered <- slope_results %>%
+        filter(contrast == c)
+      if (nrow(filtered) > 0) filtered$p.value[1] else NA
+    }, USE.NAMES = TRUE)
+
+        prepost_est <- sapply(contrasts_prepost, function(c) {
+      filtered <- prepost_results %>%
+        filter(contrast == c)
+      if (nrow(filtered) > 0) filtered$estimate[1] else NA
+    }, USE.NAMES = TRUE)
+    
+    slope_est <- sapply(contrasts_slope, function(c) {
+      filtered <- slope_results %>%
+        filter(contrast == c)
+      if (nrow(filtered) > 0) filtered$estimate[1] else NA
+    }, USE.NAMES = TRUE)
+    
+    
+    # Combine values into single data
+    # p-values
+    combined_pvals <- c(prepost_pvals, slope_pvals)
+    combined_pvals <- setNames(combined_pvals, c(contrasts_prepost, contrasts_slope))
+    pvals_df <- rbind(pvals_df, cbind(lipid = test_name, t(as.data.frame(list(combined_pvals)))))
+    
+    # Estimates
+    combined_est <- c(prepost_est, slope_est)
+    combined_est <- setNames(combined_est, c(contrasts_prepost, contrasts_slope))
+    est_df <- rbind(est_df, cbind(lipid = test_name, t(as.data.frame(list(combined_est)))))
+  }
+
+  # Select all columns after the first one to exclude lipid column
+  corrected_cols <- names(pvals_df)[-1]
+
+     # Remove rows where every column from the second column onwards contains NA
+   pvals_df <- pvals_df[rowSums(is.na(pvals_df[, -1])) < (ncol(pvals_df) - 1), ]
+  
+   
+  # Apply Benjamini-Hochberg correction and create new columns with the suffix "_BH_corrected"
+  for (col in corrected_cols) {
+    pvals_df[[paste0(col, " (corrected)")]] <- p.adjust(pvals_df[[col]], method = "BH")
+  }
+
+  # Reset row names to simple sequential numbers
+  rownames(pvals_df) <- NULL
+  rownames(est_df) <- NULL
+
+   # Only keep rows in est_df where the lipid values match those in pvals_df
+est_df <- est_df[est_df$lipid %in% pvals_df$lipid, ]
+  
+  # Convert the columns to numeric
+ # p-vals
+   for (i in 2:ncol(pvals_df)) {
+    if (!is.numeric(pvals_df[[i]])) {
+      pvals_df[[i]] <- as.numeric(pvals_df[[i]])
+    }
+  }
+  # estimates 
+   for (i in 2:ncol(est_df)) {
+    if (!is.numeric(est_df[[i]])) {
+      est_df[[i]] <- as.numeric(est_df[[i]])
+    }
+  }
+
+  # Combine the est and pvals dataframes into a list to be returned
+  est_and_pvals <- list(p.vals = pvals_df, estimates = est_df)
+  return(est_and_pvals)
+}
+
+# Prepare data for plotting lipid classes
+est_and_p_sat <- prepare_sat_data_for_plotting(result.lipid.pre_post_sat)
+est_and_p_unsat <- prepare_sat_data_for_plotting(result.lipid.pre_post_unsat)
+est_and_p_mono_unsat <- prepare_sat_data_for_plotting(result.lipid.pre_post_mono_unsat)
+est_and_p_poly_unsat <- prepare_sat_data_for_plotting(result.lipid.pre_post_poly_unsat)
 
 ```
 
-## Scatter - ADJUST CODE
-
+### Scatter
 ```{r}
-plot_lipid_class <- function(lipidomicsDF, lipid_class, detection_limits, p_val_df) {
+plot_pre_post_sat <- function(lipidomicsDF_saturation, lipid_class, p_val_df, y_label, save_folder) {
   # Filter data based on lipid class and available time
-  filtered_data <- lipidomicsDF %>%
+  filtered_data <- lipidomicsDF_saturation %>%
     filter(lipidClass == lipid_class & !is.na(time))
 
-# MAKE SUM FOR EACH ID
-pmol_mg_class_sum <- filtered_data %>%
-  group_by(lipidClass, group, id, time) %>%
-  summarize(
-    sum_pmol_mg = sum(pmol_mg, na.rm = TRUE),
-    .groups = "drop"  # Drop the grouping
-  )
   
   # Find correct p-values
   search_key <- lipid_class
@@ -632,25 +764,18 @@ pmol_mg_class_sum <- filtered_data %>%
     "       |    DIWL vs WLEX, p = ", formatC(unlist(pvalues_to_annotate[1, 7]), format = "f", digits = 3),
     ", BH corrected, p = ", formatC(unlist(pvalues_to_annotate[1, 13]), format = "f", digits = 3)
   )
-  
+
   # Calculate means for each group and time point
-mean_data_class <- pmol_mg_class_sum %>%
+mean_data_class <- filtered_data %>%
   group_by(group, time) %>%
-  summarise(mean_pmol_mg_sum = mean(sum_pmol_mg, na.rm = TRUE), .groups = 'drop')
-  
-# Check if "PE:PC ratio" is one of the lipid classes
-y_label <- if("PE/PC ratio" %in% filtered_data$lipidClass) {
-  "PE/PC ratio"
-} else {
-  expression("Lipid concentration" ~ "(pmol ·" ~ mg^-1 * ")")
-}
+  summarise(mean_unsat_proportion = mean(unsat_proportion, na.rm = TRUE), .groups = 'drop')
 
 # Create the plot
-plot <- ggplot(pmol_mg_class_sum, aes(
+plot <- ggplot(filtered_data, aes(
     x = factor(interaction(group, time, sep = " "),
       levels = c("HED Pre", "HED Post", "DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post")
     ),
-    y = sum_pmol_mg, group = interaction(id, group)
+    y = unsat_proportion, group = interaction(id, group)
   )) +
   geom_line(aes(group = interaction(id, group), color = id), alpha = 0.9, linewidth = 0.1, position = position_nudge(x = 0.03)) +
   geom_point(aes(color = id), alpha = 0.5, position = position_nudge(x = 0.03)) +
@@ -659,13 +784,13 @@ plot <- ggplot(pmol_mg_class_sum, aes(
       width = 0.3, alpha = 0.2, outlier.shape = NA,
       position = position_dodge(width = 0.75), color = "black"
     ) +
-  geom_line(data = mean_data_class, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg_sum, group = group),color = "black", linewidth = 1, position = position_nudge(x = 0.03)) +
-  scale_color_manual(values = rainbow(length(unique(pmol_mg_class_sum$id)))) +
+  geom_line(data = mean_data_class, aes(x = interaction(group, time, sep = " "), y = mean_unsat_proportion, group = group),color = "black", linewidth = 1, position = position_nudge(x = 0.03)) +
+  scale_color_manual(values = rainbow(length(unique(filtered_data$id)))) +
   labs(title = lipid_class, 
        subtitle = annotation_pvals_slope, 
        y = y_label,
        x = "") +
-  annotate("text", x = c(1.5, 3.5, 5.5), y = 3.0, label = annotation_pvals_pre_post, size = 2) +
+  annotate("text", x = c(1.5, 3.5, 5.5), y = 1.1, label = annotation_pvals_pre_post, size = 2) +
   theme_minimal() +
   theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right",
         legend.title.align = 0.5, plot.title = element_text(hjust = 0.5), legend.text = element_text(size = 6),
@@ -679,7 +804,8 @@ plot <- ggplot(pmol_mg_class_sum, aes(
 
   # Define the filename and save the plot
   filename <- paste0(
-    getwd() ,"/outputs/lipids, pre-post/plot, scatter class/",
+    getwd() ,"/outputs/saturation/pre-post/",
+    save_folder, "/",
     gsub(" ", "_", lipid_class), ".jpg"
   )
   ggsave(filename, plot = plot, device = "jpeg", width = 8, height = 6, dpi = 300)
@@ -687,16 +813,174 @@ plot <- ggplot(pmol_mg_class_sum, aes(
   cat("Plot saved as:", filename, "\n")
 }
 
+  # RUN FUNCTION
 # Loop to call the plotting function for each lipid class
+
+
 for (lipid_class in unique_lipid_classes) {
-  plot_lipid_class(lipidomicsDF, lipid_class, detection_limits, est_and_p_pvals_lipid_class$p.vals)
+# Saturated
+    plot_pre_post_sat(lipidomicsDF_saturation = lipidomicsDF_saturation, lipid_class = lipid_class, p_val_df = est_and_p_sat$p.vals, y_label = "Proportion of saturated lipids", save_folder = "saturated")
+  # Unsaturated
+  plot_pre_post_sat(lipidomicsDF_saturation = lipidomicsDF_saturation, lipid_class = lipid_class, p_val_df = est_and_p_unsat$p.vals, y_label = "Proportion of unsaturated lipids", save_folder = "unsaturated")
+  # Monounsaturated
+  plot_pre_post_sat(lipidomicsDF_saturation = lipidomicsDF_saturation, lipid_class = lipid_class, p_val_df = est_and_p_mono_unsat$p.vals, y_label = "Proportion of mono unsaturated lipids", save_folder = "unsaturated_mono")
+  # polyunsaturated
+  plot_pre_post_sat(lipidomicsDF_saturation = lipidomicsDF_saturation, lipid_class = lipid_class, p_val_df = est_and_p_poly_unsat$p.vals, y_label = "Proportion of poly unsaturated lipids", save_folder = "unsaturated_poly")
 }
+
 ```
 
+### Heat map
+```{r}
+pvals_df <- est_and_p_sat$p.vals
+estimates_df <- est_and_p_sat$estimates
+sat_type <- "sat_proportion"
 
-## Make pre/post heat map
+
+# Select the specified columns for hm_data.p-vals matrix
+pvals_df <- pvals_df[ , c("lipid", "Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
+                               "Pre WLEX - Post WLEX (corrected)", "Pre - Post : HED - DIWL (corrected)",
+                               "Pre - Post : HED - WLEX (corrected)", "Pre - Post : DIWL - WLEX (corrected)")]
+
+# Set 'lipid' as row names
+rownames(pvals_df) <- pvals_df$lipid
+rownames(estimates_df) <- estimates_df$lipid
+
+# Remove the 'lipid' column
+pvals_df <- pvals_df[ , !(names(pvals_df) %in% c("lipid"))]
+estimates_df <- estimates_df[ , !(names(estimates_df) %in% c("lipid"))]
+
+# Rename columns by removing " (corrected)" from all column names in pvals_df
+colnames(pvals_df) <- gsub(" \\(corrected\\)", "", colnames(pvals_df))
+
+# Sort column names
+common_cols <- intersect(colnames(estimates_df), colnames(pvals_df))
+estimates_df <- estimates_df[, common_cols, drop = FALSE]
+pvals_df <- pvals_df[, common_cols, drop = FALSE]
+
+### Divide dataframe based on lipid groups
+# Define lipid groups
+lipids_groups <- list(
+  gr_all = c("TAG", "1,2-DG", "1,3-DG", "AC", "PC", "PE_PC ratio", "PE", "SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer", "LPC", "LPE", "LPG", "LPI", "LPS", "PA", "PS", "PG", "PI")
+)
+
+### Divide dataframe based on lipid groups with lipid as row name
+filter_lipid_group_row <- function(data_frame, lipid_group) {
+ 
+   # Create the pattern for matching lipid groups
+  pattern <- paste0("^(", paste(lipid_group, collapse = "|"), ")")
+  
+  # Convert row names to a temporary column for sorting and filtering
+  data_frame_with_lipid <- tibble::rownames_to_column(data_frame, var = "lipid")
+  
+  # Sort the dataframe by the temporary lipid column
+  sorted_data_frame_with_lipid <- data_frame_with_lipid[order(data_frame_with_lipid$lipid), ]
+  
+  # Filter based on the pattern
+  sorted_filtered_data_frame_with_lipid <- sorted_data_frame_with_lipid[grepl(pattern, sorted_data_frame_with_lipid$lipid), ]
+  
+  # Drop the temporary lipid column and return to original format
+  rownames(sorted_filtered_data_frame_with_lipid) <- sorted_filtered_data_frame_with_lipid$lipid
+  sorted_filtered_data_frame <- sorted_filtered_data_frame_with_lipid[ , !colnames(sorted_filtered_data_frame_with_lipid) %in% 'lipid', drop = FALSE]
+  return(sorted_filtered_data_frame)
+}
+
+
+# Apply the filter function to each group and store the results in a lists
+# p-values
+pvals_gr_list <- lapply(lipids_groups, filter_lipid_group_row, data_frame = pvals_df)
+
+# estimates
+estimates_gr_list <- lapply(lipids_groups, filter_lipid_group_row, data_frame = estimates_df)
+
+# Convert all dataframes to matrices
+matrices_pvals <- lapply(pvals_gr_list, function(x) as.matrix(x))
+matrices_estimates <- lapply(estimates_gr_list, function(x) as.matrix(x))
+
+
+generate_heatmap <- function(hm_matrix, p_val_matrix, colorMap, pLims, hm_title, hm_unit) {
+  # Assumes pLims is a list with named elements corresponding to each threshold, e.g., list(p1 = 0.001, p2 = 0.01, p3 = 0.05)
+  
+# Extract test_against by removing the first part (treatment group) and the first underscore
+# This joins back the remaining parts to form the full 'test_against' label
+colTitles <- c("Slope", "Pre vs Post")
+
+  Heatmap(hm_matrix,
+          name = hm_unit, # Sets the name of the color scale
+          
+          col = colorMap, # Use provided color map
+          rect_gp = gpar(col = "white", lwd = 0.5), # Make space between each square
+          row_names_side = "left", # Position of row labels
+          row_names_gp = gpar(fontsize = 7.5 ), # Change font size of row labels
+          
+          #column_split = rep(1:(ncol(hm_matrix) / 3), each = 3), # Splits the columns and names them
+          column_title = hm_title,
+          column_names_rot = 45, # Rotate column names for better readability
+          column_names_gp = gpar(fontsize = 8, fontface = "bold"),
+          column_title_side = "top", # Placement of the column titles
+          column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+          #column_title = NULL, # Removes titles for split (could be adjusted to represent test)
+      
+          border = TRUE, # Set border around the splits
+          cluster_rows = FALSE, # Don't make clusters
+          cluster_columns = FALSE, # Don't make clusters
+          
+          cell_fun = function(j, i, x, y, width, height, fill) {
+              if (!is.na(p_val_matrix[i, j])) {
+                  if (p_val_matrix[i, j] < pLims$p1) {
+                      grid.text("+++", x, y, gp = gpar(col = "black", fontsize = 7, fontface = "bold"), just = "center")
+                  } else if (p_val_matrix[i, j] < pLims$p2) {
+                      grid.text("++", x, y, gp = gpar(col = "black", fontsize = 7, fontface = "bold"), just = "center")
+                  } else if (p_val_matrix[i, j] < pLims$p3) {
+                      grid.text("+", x, y, gp = gpar(col = "black", fontsize = 7, fontface = "bold"), just = "center")
+                  }
+              }
+          })
+}
+
+# Define color map for heatmap
+color_mapping_slope <- colorRamp2(c(-50, 0, 50), c("blue", "white", "red"))
+color_mapping_pre_post <- colorRamp2(c(-50, 0, 50), c("darkgreen", "white", "orange"))
+
+# Set p-value limits
+p_value_limits <- list(p1 = 0.001, p2 = 0.01, p3 = 0.05)
+
+# Create a list for the heatmaps
+hm <- list()
+
+# Assuming 'matrices_rho$gr1' is your correlation matrix and 'matrices_p_adj_non$gr1' is your p-value matrix
+for (i in 1:length(lipids_groups)) {
+  # Generate slope and pre/post hm
+  
+  hm_slope <- generate_heatmap(matrices_estimates[[i]][,4:6]*100, matrices_pvals[[i]][,4:6], color_mapping_slope, p_value_limits, hm_title = "Slope ", hm_unit = "pp")
+  hm_pre_post <- generate_heatmap(matrices_estimates[[i]][,1:3]*100, matrices_pvals[[i]][,1:3], color_mapping_pre_post, p_value_limits, hm_title = "Pre vs Post", hm_unit = "pp ")
+  
+  # Combine heat maps and store in list
+  hm[[i]] <- hm_slope + hm_pre_post
+  # Generate heatmap and store it in the list
+}
+
+# Define the path and name of your PDF file
+pdf_path <- paste0( getwd(), "/outputs/saturation/heatmap/heatmap.pdf")
+
+# Open a PDF device
+pdf(pdf_path, width = 8, height = 10)
+
+# Draw your heatmaps. Each call to draw() will create a new page in the PDF for each heatmap
+for (i in 1:length (hm)){
+  draw(hm[[i]])
+}
+
+# Don't forget to close the device
+dev.off()
+```
 
 ## Make correlation statistics on change
+
+
+
+
+
 
 ## Make correlation stats on change heatmap
 
@@ -2829,7 +3113,6 @@ est_and_p_pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_
 ### Prepare data
 
 ```{r}
-# Assuming your list is named list_df
 pvals_df <- est_and_p_lipid_class_and_comp$p.vals
 estimates_df <- est_and_p_lipid_class_and_comp$estimates
 
@@ -3535,7 +3818,7 @@ plot <- ggplot(pmol_mg_class_sum, aes(
       position = position_dodge(width = 0.75), color = "black"
     ) +
   geom_line(data = mean_data_class, aes(x = interaction(group, time, sep = " "), y = mean_pmol_mg_sum, group = group),color = "black", linewidth = 1, position = position_nudge(x = 0.03)) +
-  scale_color_manual(values = rainbow(length(unique(pmol_mg_class_sum$id)))) +
+  scale_color_manual(values = rainbow(length(unique(filtered_data$id)))) +
   labs(title = lipid_class, 
        subtitle = annotation_pvals_slope, 
        y = y_label,
