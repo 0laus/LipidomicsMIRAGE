@@ -4671,7 +4671,7 @@ else {
   )
 }
 
-label_height <- max(filtered_data[[unit]]) * 0.9
+label_height <- max(pmol_mg_class_sum[[unit]])*1
  # If not working change to 3.0
 
 # Create the plot
