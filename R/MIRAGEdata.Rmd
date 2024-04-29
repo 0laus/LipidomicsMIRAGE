@@ -4468,8 +4468,9 @@ plot_lipid <- function(lipidomicsDF, lipid_composition, lipid_class, detection_l
   pvalues_to_annotate.outlierRM <- p_val_df_outlierRM [p_val_df_outlierRM[, 1] == search_key, ]
   
   
-# Calculate means for each group and time point using dynamic variable
+# Calculate means for each group and time point using dynamic variable and only non outlier values
 mean_data_comp <- filtered_data %>%
+  filter(outlier == FALSE | is.na(outlier)) %>% 
   group_by(group, time) %>%
   summarise(mean_value = mean(!!sym(unit), na.rm = TRUE),
             .groups = 'drop')
@@ -4576,7 +4577,7 @@ mean_data_comp <- filtered_data %>%
 }
 
 # Loop to call the plotting function for each combination of lipid_class and lipid_composition
-unique_lipid_classes <- "Cer ratio"# unique(lipidomicsDF$lipidClass[!lipidomicsDF$lipidClass == "PE.PC"])
+unique_lipid_classes <- unique(lipidomicsDF$lipidClass[!lipidomicsDF$lipidClass == "PE.PC"])
 
 for (lipid_class in unique_lipid_classes) {
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
