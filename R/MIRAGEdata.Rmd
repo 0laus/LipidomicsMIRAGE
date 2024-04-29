@@ -36,11 +36,11 @@ Cut offs and values to be used throughout the analysis
 
 ```{r message=TRUE, warning=FALSE}
 # Number of points above 0 needed for an analysis to take place. The number is the number of id's within class across all intervention groups.
-analysis_cutoff <- 15
+analysis_cutoff <- 12
 
 # Outlier threshold: The factor to multiply by the IQR to define outliers to remove.
 # Default in many software is 1.5
-outlier_IQR_factor <- 2.0
+outlier_IQR_factor <- 1.5
 
 # Factor above LLOQ to discard a value NB currently not used
 LLOQ_discard_factor <- 2
@@ -225,7 +225,7 @@ define_outliers <- function(df, value_col, outlier_col_name){
   dyn_imputed_name <- paste0(value_col, "_imp")
   
   
-  # Calculate the differences
+  # Calculate the abseloute differences to treat an increase and a decrease similarily
   difference_df <- lipidomicsDF %>%
     select(id, lipidClass, lipidComposition, time, !!sym(value_col)) %>%
     group_by(id, lipidClass, lipidComposition) %>%
@@ -247,10 +247,11 @@ define_outliers <- function(df, value_col, outlier_col_name){
   for (class in unique(df$lipidClass)){
     for (comp in unique(df$lipidComposition)){
       
-      median_value <- median(df[[value_col]][df$lipidClass == class & df$lipidComposition == comp])
+      median_value <- median(df[[value_col]][df$lipidClass == class & df$lipidComposition == comp],na.rm = TRUE)
       
       # Identify indices for current class and composition
       indices <- which(df$lipidClass == class & df$lipidComposition == comp)
+      
       # To not double count the same values for change pre to post, only pre is used
       indices_change <- which(df$lipidClass == class & df$lipidComposition == comp & df$time == "Pre")
       
@@ -268,8 +269,8 @@ define_outliers <- function(df, value_col, outlier_col_name){
       lower_bound <- Q1 - (outlier_IQR_factor * IQR)
       upper_bound <- Q3 + (outlier_IQR_factor * IQR)
       
-      lower_bound_change <- Q1 - (outlier_IQR_factor * IQR_change)
-      upper_bound_change <- Q3 + (outlier_IQR_factor * IQR_change)
+      lower_bound_change <- Q1_change - (outlier_IQR_factor * IQR_change)
+      upper_bound_change <- Q3_change + (outlier_IQR_factor * IQR_change)
       
       
       # Update the 'outlier' column based on calculated bounds
@@ -2937,15 +2938,15 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PE.PC"]) {
       lipid_class,
       lipid_composition))
 
-#    # Plot data - Comment out if to be used
-#    correlation_change_plot(
-#      correlation_df,
-#      mirage_ch_vars,
-#      correlation_values_ch_composition,
-#      savePathClassComp,
-#      lipid_class,
-#      lipid_composition
-#   )
+   # Plot data - Comment out if to be used
+   correlation_change_plot(
+     correlation_df,
+     mirage_ch_vars,
+     correlation_values_ch_composition,
+     savePathClassComp,
+     lipid_class,
+     lipid_composition
+  )
   }
 }
 
@@ -2971,15 +2972,15 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) 
     lipid_class,
     lipidcomposition = NULL))
 
-# # Plot data - un-comment if to be used again
-#  correlation_change_plot(
-#    correlation_df,
-#    mirage_ch_vars,
-#    correlation_values_ch_class,
-#    savePathClass,
-#    lipid_class,
-#    lipidcomposition = NULL
-#  )
+# Plot data - un-comment if to be used again
+ correlation_change_plot(
+   correlation_df,
+   mirage_ch_vars,
+   correlation_values_ch_class,
+   savePathClass,
+   lipid_class,
+   lipidcomposition = NULL
+ )
 }
 
 ## SAVE AND LOAD VARIABLES TO NOT HAVE TO RERUN ALL THE ANALYSIS
@@ -3835,15 +3836,15 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PE.PC"]) {
       lipidcomposition = lipid_composition))
 
 
-        # # Plot data - Comment out if to be used
-        # correlation_crossSectional_plot(
-        #   correlation_crossSection_df,
-        #   mirage_crossSectional_vars,
-        #   correlation_results_crossSection_composition,
-        #   savePathClassComp,
-        #   lipid_class,
-        #   lipid_composition
-        # )
+        # Plot data - Comment out if to be used
+        correlation_crossSectional_plot(
+          correlation_crossSection_df,
+          mirage_crossSectional_vars,
+          correlation_results_crossSection_composition,
+          savePathClassComp,
+          lipid_class,
+          lipid_composition
+        )
   }
 }
 
@@ -3863,15 +3864,15 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) 
   # Calculate correlations for changes
   correlation_results_crossSection_class <- rbind(correlation_results_crossSection_class, correlation_cross_sectional(correlation_crossSection_df, lipidomicsDF, mirage_crossSectional_vars, lipid_class, lipidcomposition = NULL))
 
-  # # Plot data - un-comment if to be used again
-  # correlation_crossSectional_plot(
-  #   correlation_crossSection_df,
-  #   mirage_crossSectional_vars,
-  #   correlation_results_crossSection_class,
-  #   savePathClass,
-  #   lipid_class,
-  #   lipidcomposition = NULL
-  # )
+# Plot data - un-comment if to be used again
+correlation_crossSectional_plot(
+  correlation_crossSection_df,
+  mirage_crossSectional_vars,
+  correlation_results_crossSection_class,
+  savePathClass,
+  lipid_class,
+  lipidcomposition = NULL
+)
 }
 
 
