@@ -40,7 +40,7 @@ analysis_cutoff <- 12
 
 # Outlier threshold: The factor to multiply by the IQR to define outliers to remove.
 # Default in many software is 1.5
-outlier_IQR_factor <- 1.5
+outlier_IQR_factor <- 4
 
 # Factor above LLOQ to discard a value NB currently not used
 LLOQ_discard_factor <- 2
@@ -207,7 +207,7 @@ lipidomicsDF <- lipidomicsDF %>%
 
 ### Outlier handling
 
-Outliers are defined based on two criteria: 1) Outside "outlier_IQR_factor" x the IQR for all measurements for a lipidcomposition within a lipidclass. 2) Outside "outlier_IQR_factor" x the IQR for the post - pre change for all measurements within lipidcomposition and lipidclass.
+Outliers are defined based on two criteria: 1) Outside "outlier_IQR_factor" x the IQR for all *non-zero* measurements for a lipidcomposition within a lipidclass. 2) Outside "outlier_IQR_factor" x the IQR for the post - pre change for all measurements within lipidcomposition and lipidclass.
 
 A new column called "... \_imp" is created, where outlier values are replaced with the median for all values within lipidcomposition and class.
 
@@ -247,10 +247,11 @@ define_outliers <- function(df, value_col, outlier_col_name){
   for (class in unique(df$lipidClass)){
     for (comp in unique(df$lipidComposition)){
       
+      # Used as an imputation for outlier
       median_value <- median(df[[value_col]][df$lipidClass == class & df$lipidComposition == comp],na.rm = TRUE)
       
       # Identify indices for current class and composition
-      indices <- which(df$lipidClass == class & df$lipidComposition == comp)
+      indices <- which(df$lipidClass == class & df$lipidComposition == comp & df$pmol_mg > 0)
       
       # To not double count the same values for change pre to post, only pre is used
       indices_change <- which(df$lipidClass == class & df$lipidComposition == comp & df$time == "Pre")
@@ -265,21 +266,19 @@ define_outliers <- function(df, value_col, outlier_col_name){
       IQR_change <- Q3_change - Q1_change
       
       
-      # Define lower and upper bounds
-      lower_bound <- Q1 - (outlier_IQR_factor * IQR)
+      # Define upper bounds
       upper_bound <- Q3 + (outlier_IQR_factor * IQR)
-      
-      lower_bound_change <- Q1_change - (outlier_IQR_factor * IQR_change)
       upper_bound_change <- Q3_change + (outlier_IQR_factor * IQR_change)
       
-      
       # Update the 'outlier' column based on calculated bounds
-      df[[composition_outlier_name]][indices] <- df[[value_col]][indices] < lower_bound | df[[value_col]][indices] > upper_bound
+      df[[composition_outlier_name]][indices] <- df[[value_col]][indices] > upper_bound
       
-      df[[change_outlier_name]][indices] <- df[[dyn_difference_name]][indices] < lower_bound_change | df[[dyn_difference_name]][indices] > upper_bound_change
+      df[[change_outlier_name]][indices] <- df[[dyn_difference_name]][indices] > upper_bound_change
       
-      # Add a outlier column  with TRUE values if both of the above outlier cols are TRUE.
+    
+      # Add a outlier column with TRUE values if both of the above outlier cols are TRUE and if it's the highest index to maximally make 1 data point as an outlier.
       for (ind in indices){
+        
         df[[outlier_col_name]][ind] <- df[[composition_outlier_name]][ind] & df[[change_outlier_name]][ind]
         
         # Add col with imputed values to fill in outliers
@@ -290,6 +289,17 @@ define_outliers <- function(df, value_col, outlier_col_name){
       }
     }
   }
+  
+ # Only make highest value within each composition and class stay TRUE as an outlier
+ df <- df %>%
+   filter(sampleNumber != 66) %>% # Filter out sample 66, as it is removed
+   group_by(lipidComposition, lipidClass) %>%
+   mutate(
+     max_value = max(.data[[value_col]], na.rm = TRUE),
+     outlier = if_else(.data[[value_col]] == max_value, outlier, FALSE)  # Set outlier to FALSE if not max
+   ) %>%
+   select(-max_value)  # Remove the max_value column
+  
   return(df)
 }
 
@@ -304,6 +314,7 @@ lipidomicsDF <- define_outliers(df = lipidomicsDF,
                                  value_col = "pmol_mg_log",
                                  outlier_col_name = "outlier_log")
 
+ 
 ```
 
 ### Sample removal
@@ -316,6 +327,8 @@ lipidomicsDF <- define_outliers(df = lipidomicsDF,
 
 lipidomicsDF <- lipidomicsDF[!lipidomicsDF$sampleNumber == 66,]
 ```
+
+
 
 ### Ratios and saturation
 
@@ -397,8 +410,7 @@ lipidomicsDF_saturation <- lipidomicsDF_saturation %>%
   #View(lipidomicsDF_saturation)
 ```
 
-**Add PE/PC ratio**
-Outliers are handled by calculating from imputed values as the PE and PC classes are summed. As they are analysed on a lipid class level, Outlier status is therefore set to FALSE.
+**Add PE/PC ratio** Outliers are handled by calculating from imputed values as the PE and PC classes are summed. As they are analysed on a lipid class level, Outlier status is therefore set to FALSE.
 
 ```{r}
 add_ratio_lipidomics <- function (lipidomicsDF)
@@ -451,8 +463,7 @@ return(lipidomicsDF)
 lipidomicsDF <- add_ratio_lipidomics(lipidomicsDF = lipidomicsDF)
 ```
 
-**Add Cer 16:0 / Cer 24:0 ratio**
-Outliers are handled by filtering out outlier data in the function below
+**Add Cer 16:0 / Cer 24:0 ratio** Outliers are handled by filtering out outlier data in the function below
 
 ```{r}
 add_ratio_lipidomics <- function (lipidomicsDF)
@@ -2076,10 +2087,10 @@ corrrelation_results_crossSection_sat <- rbind(corrrelation_results_crossSection
 }}
 ```
 
-### Vulcano plot
+### volcano plot
 
 ```{r}
-vulcano_crossSection <- function(input_vars, save_sub_path, correlation_results, plot_title, save_folder){
+volcano_crossSection <- function(input_vars, save_sub_path, correlation_results, plot_title, save_folder){
 
 # Remove NA rows
 correlation_results <- correlation_results[!is.na(correlation_results$spearman_rho_all), ]
@@ -2133,7 +2144,7 @@ vulc_plot <- ggplot(vulc_data_crossSection, aes(x = spearman_rho_all, y = -log10
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
 1
     # Save path
-  save_path <- paste0( getwd(), "/outputs/saturation/cross section/vulcano", "/", save_folder,"/" ,save_sub_path, ".jpeg")
+  save_path <- paste0( getwd(), "/outputs/saturation/cross section/volcano", "/", save_folder,"/" ,save_sub_path, ".jpeg")
     
 # Save the plot
 ggsave(save_path , plot = vulc_plot, width = 12, height = 8, dpi = 400)
@@ -2158,27 +2169,27 @@ for (i in seq_along(mirage_crossSectional_vars)) {
         }
         }))
     
-         vulcano_crossSection(input_vars = names_to_use,
+         volcano_crossSection(input_vars = names_to_use,
                               save_sub_path = list_name,
                               correlation_results = correlation_values_crossSection_saturation_list$sat_proportion,
                               plot_title = "saturated proportion",
                               save_folder = "saturated")
                   
-         vulcano_crossSection(input_vars = names_to_use,
+         volcano_crossSection(input_vars = names_to_use,
                               save_sub_path = list_name,
                               correlation_results = correlation_values_crossSection_saturation_list$unsat_proportion,
                               plot_title = "unsaturated proportion",
                               save_folder = "unsaturated")
          
          
-         vulcano_crossSection(input_vars = names_to_use,
+         volcano_crossSection(input_vars = names_to_use,
                               save_sub_path = list_name,
                               correlation_results = correlation_values_crossSection_saturation_list$unsat_mono_proportion,
                               plot_title = "mono unsaturated proportion",
                               save_folder = "mono unsaturated")
          
          
-         vulcano_crossSection(input_vars = names_to_use,
+         volcano_crossSection(input_vars = names_to_use,
                               save_sub_path = list_name,
                               correlation_results = correlation_values_crossSection_saturation_list$unsat_poly_proportion,
                               plot_title = "poly unsaturated proportion",
@@ -2502,11 +2513,12 @@ sd(mirage_included[mirage_included$group == "HED",]$daily_steps_steps_24hr_post 
 ```
 
 # Analysis based on changes
+
 ## Prepare data (function)
+
 Function to prepare and merge data into wide format
 
-Ouliers handling:
-pmol_mg imputed is used. For composition, only rows that are not outliers are fed to the functions, i.e. imputed col will be equal to the original column. For classes, imputed values are used to not get scewed class sums.
+Ouliers handling: pmol_mg imputed is used. For composition, only rows that are not outliers are fed to the functions, i.e. imputed col will be equal to the original column. For classes, imputed values are used to not get scewed class sums.
 
 ```{r}
 # Function to prepare data
@@ -3003,7 +3015,7 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) 
 
 ```
 
-## Heatmap & vulcano plot
+## Heatmap & volcano plot
 
 ### Common data preparation
 
@@ -3063,10 +3075,10 @@ long_format_p_adj.gr.class <- long_format_p_adj.non %>%
   ungroup()
 ```
 
-### Vulcano plot
+### volcano plot
 
 ```{r}
-vulcano_changes <- function(input_vars, save_sub_path, spearman_types_select, sub_folder){
+volcano_changes <- function(input_vars, save_sub_path, spearman_types_select, sub_folder){
 ### Join p-values adjusted for all lipid species and join with the rho values
   
 # Filter rows where 'test_against' column values are in 'input_vars'
@@ -3125,7 +3137,7 @@ vulc_plot <- ggplot(vulc_data, aes(x = rho_value, y = -log10(p_value))) +
   guides(alpha = "none", color = guide_legend(override.aes = list(alpha = 1))) 
 
 # Save the plot
-save_path <- paste0(getwd(), "/outputs/correlations in changes/vulcano/",sub_folder, "/", save_sub_path, ".jpg")
+save_path <- paste0(getwd(), "/outputs/correlations in changes/volcano/",sub_folder, "/", save_sub_path, ".jpg")
 
 ggsave(save_path, plot = vulc_plot, width = 14, height = 10, dpi = 400)
 }
@@ -3151,8 +3163,8 @@ for (i in seq_along(mirage_ch_vars)) {
         }
       
     }))
-    vulcano_changes(input_vars = names_to_use, sub_folder = "all" , save_sub_path = list_name, spearman_types_select = spearman_types_select.all)
-    vulcano_changes(input_vars = names_to_use, sub_folder = "groups", save_sub_path = list_name, spearman_types_select = spearman_types_select.groups)
+    volcano_changes(input_vars = names_to_use, sub_folder = "all" , save_sub_path = list_name, spearman_types_select = spearman_types_select.all)
+    volcano_changes(input_vars = names_to_use, sub_folder = "groups", save_sub_path = list_name, spearman_types_select = spearman_types_select.groups)
 }
 ```
 
@@ -3491,8 +3503,8 @@ Analyse correlation between variables from the mirage dataset and the lipidomics
 
 ## Prepare data (function)
 
-Ouliers handled by using pmol_imputed.
-For lipid composition, outliers are removed before in the data fed to the dataset
+Ouliers handled by using pmol_imputed. For lipid composition, outliers are removed before in the data fed to the dataset
+
 ```{r}
 # run function test
 # Function to prepare data
@@ -3897,10 +3909,10 @@ correlation_crossSectional_plot(
 
 ```
 
-## Vulcano
+## volcano
 
 ```{r}
-vulcano_crossSection <- function(input_vars, save_sub_path){
+volcano_crossSection <- function(input_vars, save_sub_path){
 # Combine class and composition data
 correlation_results_crossSection_class_and_comp <- rbind(correlation_results_crossSection_composition, correlation_results_crossSection_class)
 
@@ -3969,7 +3981,7 @@ vulc_plot <- ggplot(vulc_data_crossSection, aes(x = spearman_rho_all, y = -log10
   theme(plot.title = element_text(hjust = 0.5, face = "bold"))
 
     # Save path
-  save_path <- paste0( getwd(), "/outputs/cross section/vulcano/", save_sub_path, ".jpeg")
+  save_path <- paste0( getwd(), "/outputs/cross section/volcano/", save_sub_path, ".jpeg")
     
 # Save the plot
 ggsave(save_path , plot = vulc_plot, width = 12, height = 8, dpi = 400)
@@ -3996,7 +4008,7 @@ for (i in seq_along(mirage_crossSectional_vars)) {
         }
         }))
     
-         vulcano_crossSection(input_vars = names_to_use , save_sub_path = list_name)
+         volcano_crossSection(input_vars = names_to_use , save_sub_path = list_name)
 }
 
 ```
@@ -4158,8 +4170,8 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
   
   # Print progress
   ifelse( is.null(lipidcomposition),
-         print (paste0( "Analysing ", lipidclass, "...")),
-        print( paste0( "Analysing ", lipidclass, " ", lipidcomposition, "...")))
+          print (paste0( "Analysing ", lipidclass, "...")),
+          print( paste0( "Analysing ", lipidclass, " ", lipidcomposition, "...")))
   
   # Filter dataset based on lipidclass and optionally lipidcomposition
   if (!is.null(lipidcomposition)) {
@@ -4167,7 +4179,7 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
   } else {
     data_to_model <- filter(dataset, lipidClass == lipidclass)
   }
-
+  
   # Check number of non-zero rows
   non_zero_rows <- data_to_model %>% 
     filter(pmol_mg > 0) %>% 
@@ -4273,7 +4285,7 @@ lipid_classes_per_comp <- unique_combinations$lipidClass[!unique_combinations$li
 lipid_compositions <- unique_combinations$lipidComposition[!unique_combinations$lipidClass == "PE.PC"]
 
 # Run function for lipid composition
-# PE.PC should not be analysed as a composition, but only on class level
+# PE.PC is not analysed as a composition, but only as class
 result.lipid.pre_post.class_comp <- pmap(
   list(lipidClass = lipid_classes_per_comp,
        lipidComposition = lipid_compositions),
@@ -4353,7 +4365,7 @@ prepare_lipid_data_for_plotting <- function(result_data) {
     }, USE.NAMES = TRUE)
     
     
-    # Combine values into single data
+    # Combine values  %>%  single data
     # p-values
     combined_pvals <- c(prepost_pvals, slope_pvals)
     combined_pvals <- setNames(combined_pvals, c(contrasts_prepost, contrasts_slope))
@@ -4377,19 +4389,19 @@ prepare_lipid_data_for_plotting <- function(result_data) {
     
     # ********** P ADJUSTMENT ***********
     
-# # adjust p-values by group and lipidClass
-#     # P-values based on test counts within lipid class.
-# pvals_df <- pvals_df %>%
-#   mutate(lipidClass = sub("([^_]+)_.*", "\\1", lipid)) %>%
-#   group_by(lipidClass) %>%
-#   mutate(
-#     !!paste0(col, " (corrected)") := p.adjust(.data[[col]], method = "BH")
-#   ) %>%
-#   ungroup() %>%
-#   select(-lipidClass)  # Remove the lipidClass column
+ # adjust p-values by group and lipidClass
+     # P-values based on test counts within lipid class.
+ pvals_df <- pvals_df %>%
+   mutate(lipidClass = sub("([^_]+)_.*", "\\1", lipid)) %>%
+   group_by(lipidClass) %>%
+   mutate(
+     !!paste0(col, " (corrected)") := p.adjust(.data[[col]], method = "BH")
+   ) %>%
+   ungroup() %>%
+   select(-lipidClass)  # Remove the lipidClass column
 
-    # P-values based on all test count
-    pvals_df[[paste0(col, " (corrected)")]] <- p.adjust(pvals_df[[col]], method = "BH")
+#    # P-values based on all test count
+ #   pvals_df[[paste0(col, " (corrected)")]] <- p.adjust(pvals_df[[col]], method = "BH")
   }
 
    # ********** P ADJUSTMENT ***********
@@ -4420,27 +4432,34 @@ est_df <- est_df[est_df$lipid %in% pvals_df$lipid, ]
   return(est_and_pvals)
 }
 
-# Run for class and composition combined
-# Combine lists
-result.lipid.pre_post.class_and_comp <- c(result.lipid.pre_post.class_comp, result.lipid.pre_post.class)
-# Outlier removed
-result.lipid.pre_post.class_and_comp.outlierRM <- c(result.lipid.pre_post.class_comp.outlierRM, result.lipid.pre_post.class.outlierRM)
 
-# Run prepare data function on combined list
-est_and_p_lipid_class_and_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_and_comp)
+## Code from when class and composition was seperated
+# Prepare data for plotting lipid composition within each lipid class
+est_and_p_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp)
 # Outlier rm
-est_and_p_lipid_class_and_comp.outlierRM <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_and_comp.outlierRM)
+est_and_p_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp.outlierRM)  
+
+
+# Prepare data for plotting lipid classes
+est_and_p_pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class)
+# Outlier rm
+est_and_p_pvals_lipid_class.outlierRM <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class.outlierRM)
 
 
 
-### Code from when class and composition was seperated
-# # Prepare data for plotting lipid composition within each lipid class
-# est_and_p_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp)
+# ### Code for when class and composition were combined
+# # Combine lists
+# result.lipid.pre_post.class_and_comp <- c(result.lipid.pre_post.class_comp, result.lipid.pre_post.class)
+# # Outlier removed
+# result.lipid.pre_post.class_and_comp.outlierRM <- c(result.lipid.pre_post.class_comp.outlierRM, result.lipid.pre_post.class.outlierRM)
 # 
-# # Prepare data for plotting lipid classes
-# est_and_p_pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class)
+# # Run prepare data function on combined list
+# est_and_p_lipid_class_and_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_and_comp)
 # # Outlier rm
-# est_and_p_pvals_lipid_class.outlierRM <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class.outlierRM)
+# est_and_p_lipid_class_and_comp.outlierRM <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_and_comp.outlierRM)
+
+
+
 ```
 
 ## Scatter plots
@@ -4810,7 +4829,7 @@ for (lipid_class in unique_lipid_classes) {
 }
 ```
 
-## Heatmap & vulcano plot
+## Heatmap & volcano plot
 
 ### Prepare data
 
@@ -4969,7 +4988,7 @@ estimates_df_plotData <- joined_df %>%
 estimates_df_plotData <- as.data.frame(estimates_df_plotData)
 ```
 
-### Vulcano
+### volcano
 
 ```{r}
 # Turn into two dataframes:
@@ -5068,7 +5087,7 @@ vulc_plot <- ggplot(vulc_slope, aes(x = ch_pp, y = -log10(p_value))) +
 print(vulc_plot)
 
 # Save the plot
-ggsave( paste0(getwd(), "/outputs/pre_post/vulcano/slope_volcano.jpg"), plot = vulc_plot, width = 8, height = 10, dpi = 400)
+ggsave( paste0(getwd(), "/outputs/pre_post/volcano/slope_volcano.jpg"), plot = vulc_plot, width = 8, height = 10, dpi = 400)
 ```
 
 #### Pre-post
@@ -5108,7 +5127,7 @@ vulc_plot <- ggplot(vulc_prePost, aes(x = log2foldch, y = -log10(p_value))) +
 print(vulc_plot)
 
 # Save the plot
-ggsave( paste0( getwd(), "/outputs/pre_post/vulcano/prePost_volcano.jpg"), plot = vulc_plot, width = 8, height = 10, dpi = 300)
+ggsave( paste0( getwd(), "/outputs/pre_post/volcano/prePost_volcano.jpg"), plot = vulc_plot, width = 8, height = 10, dpi = 300)
 ```
 
 ### Heatmap
