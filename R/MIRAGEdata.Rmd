@@ -4310,8 +4310,153 @@ result.lipid.pre_post.class.outlierRM <- map(lipid_classes, ~ mixedmodel_pre_pos
 
 result.lipid.pre_post.class <- flatten(result.lipid.pre_post.class)
 result.lipid.pre_post.class.outlierRM <- flatten(result.lipid.pre_post.class.outlierRM)
+```
+
+### QC: t-test on class
+```{r}
+# Calculate class sums for each id
+class_sums <- lipidomicsDF %>% 
+  group_by(id, lipidClass, time, group) %>% 
+  summarize( class_sum = sum(pmol_mg)) %>% 
+ungroup()
+
+# Imputed
+class_sums_outlier.imp <- lipidomicsDF %>% 
+  group_by(id, lipidClass, time, group) %>% 
+  summarize( class_sum = sum(pmol_mg_imp)) %>% 
+ungroup()
+
+
+
+# Calculate pre-post delta
+class_deltas <- class_sums %>%
+  filter(time %in% c("Pre", "Post")) %>%
+  pivot_wider(
+    names_from = time, 
+    values_from = class_sum, 
+    names_prefix = "class_sum_"
+  ) %>%
+  group_by(id, lipidClass, group) %>%
+  summarize(
+    class_delta = class_sum_Post - class_sum_Pre,
+    .groups = "drop"
+  ) %>%
+  ungroup()
+
+# Calculate pre-post delta
+class_deltas.imp <- class_sums_outlier.imp %>%
+  filter(time %in% c("Pre", "Post")) %>%
+  pivot_wider(
+    names_from = time, 
+    values_from = class_sum, 
+    names_prefix = "class_sum_"
+  ) %>%
+  group_by(id, lipidClass, group) %>%
+  summarize(
+    class_delta = class_sum_Post - class_sum_Pre,
+    .groups = "drop"
+  ) %>%
+  ungroup()
+
+
+# Calculate t-tests based on delta
+results_ttest <- class_deltas %>%
+  filter(group %in% c("DIWL", "WLEX")) %>%
+  group_by(lipidClass) %>%
+  do(tidy(t.test(class_delta ~ group, data = .))) %>%
+  ungroup()
+
+# Calculate t-tests based on delta
+results_ttest.imp <- class_deltas.imp %>%
+  filter(group %in% c("DIWL", "WLEX")) %>%
+  group_by(lipidClass) %>%
+  do(tidy(t.test(class_delta ~ group, data = .))) %>%
+  ungroup()
+
+
+# Create table with lipid classes and p-values
+p_value_table <- results_ttest %>%
+select(lipidClass, p.value)
+
+# Imputed
+p_value_table.imp <- results_ttest.imp %>%
+select(lipidClass, p.value)
+
+# Renaming the p.value column
+p_value_table <- p_value_table %>%
+  rename(p.value.ttest = p.value)
+
+# For imputed
+p_value_table.imp <- p_value_table.imp %>%
+  rename(p.value.ttest.imp = p.value)
+
+# Join imputed ttest p-values
+p_value_table <- p_value_table.imp %>%
+  left_join(p_value_table, by = "lipidClass")
+
+# Extract p-values from mixed model
+# Function to extract the third p-value from each lipid class results
+extract_p_value <- function(lipid_class_results) {
+  if (!is.null(lipid_class_results$slope_results$p.value) && length(lipid_class_results$slope_results$p.value) >= 3) {
+    return(lipid_class_results$slope_results$p.value[[3]])
+  } else {
+    return(NA)  # Return NA if the p-value does not exist or the structure is incorrect
+  }
+}
+# Apply the function to each lipidClass and create a data frame
+p_value_mixed <- sapply(result.lipid.pre_post.class, extract_p_value, USE.NAMES = TRUE)
+p_value_mixed_df <- data.frame(lipidClass = names(p_value_mixed), p.value.mixed = p_value_mixed, stringsAsFactors = FALSE)
+
+# without outliers
+p_value_mixed.noOutliers <- sapply(result.lipid.pre_post.class.outlierRM, extract_p_value, USE.NAMES = TRUE)
+p_value_mixed_df.noOutliers <- data.frame(lipidClass = names(p_value_mixed.noOutliers), p.value.mixed.noOutliers = p_value_mixed.noOutliers, stringsAsFactors = FALSE)
+
+
+# Join mixed model p-values
+p_value_table <- p_value_mixed_df %>%
+  left_join(p_value_table, by = "lipidClass")
+
+p_value_table <- p_value_mixed_df.noOutliers %>%
+  left_join(p_value_table, by = "lipidClass")
+
+# Make with correct decimals
+p_value_table <- p_value_table %>%
+  mutate(
+    p.value.ttest = round(p.value.ttest, digits = 5),
+    p.value.ttest.imp = round(p.value.ttest.imp, digits = 5),
+    p.value.mixed = round(p.value.mixed, digits = 5),
+    p.value.mixed.noOutliers = round(p.value.mixed.noOutliers, digits = 5)
+  )
+
+# Add a sorting order based on p.value.mixed.noOutliers
+p_value_table_ordered <- p_value_table %>%
+  mutate(ordering = rank(p.value.mixed.noOutliers, ties.method = "first")) %>%
+  arrange(ordering)
+
+# Reshape data from wide to long, preserving the ordering
+p_value_long <- p_value_table_ordered %>%
+  pivot_longer(
+    cols = starts_with("p.value"),
+    names_to = "p_value_type",
+    values_to = "p_value"
+  )
+
+# Factor the lipidClass with levels specified by the ordering to ensure ggplot uses this order
+p_value_long$lipidClass <- factor(p_value_long$lipidClass, levels = unique(p_value_long$lipidClass))
+
+# Create a grouped bar plot with ordered lipidClass
+ggplot(p_value_long, aes(x = lipidClass, y = p_value, fill = p_value_type)) +
+  geom_col(position = position_dodge(width = 0.8), alpha = 0.8) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") + 
+  labs(title = "Comparison of P-values: Mixed models vs t-tests on delta values",
+       x = "Lipid Class",
+       y = "P-value",
+       fill = "P-value Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x labels for better readability
 
 ```
+
 
 ## Prepare data
 
