@@ -2748,13 +2748,13 @@ lipidName <- paste0(lipidclass, " ", lipidcomposition)
     merged_data <- left_join(lipidomicsDF, mirage_data_long_ch, by = c("id", "time"))
 
     # Prepare lipidomics data
-if (!is.null(lipidcomposition) && lipidcomposition != "ratio") {
+if (!is.null(lipidcomposition)){
       merged_data_filtered <- filter(merged_data, lipidClass == lipidclass, lipidComposition == lipidcomposition)
 } else {
     merged_data_filtered <- filter(merged_data, lipidClass == lipidclass)
 }
     
-    
+
     # Ensure 'time' and 'group' are factors
     merged_data_filtered$time <- as.factor(merged_data_filtered$time)
     merged_data_filtered$group <- as.factor(merged_data_filtered$group)
@@ -2764,15 +2764,25 @@ if (!is.null(lipidcomposition) && lipidcomposition != "ratio") {
 
     # Relevel 'group' so 'HED' is the reference level
     merged_data_filtered$group <- relevel(merged_data_filtered$group, ref = "HED")
-
+    
+      # Determine if lipidComposition can be a random effect
+  if (!is.null(lipidcomposition) ||  length( unique(merged_data_filtered$lipidComposition)) < 2) {
+        model_formula_str <- paste0(
+          "pmol_mg ~ time * ", test_against_name_clean,
+          " + (1|id)"
+          )
+  } else {
+            model_formula_str <- paste0(
+          "pmol_mg ~ time * ", test_against_name_clean,
+          " + (1|id) + (1 + time | lipidComposition)"
+          )
+  }
+    
+    
     # Attempt to construct the formula, fit the model, and extract results
     tryCatch(
       {
-        # Construct the formula as a string
-        model_formula_str <- paste0(
-          "pmol_mg ~ time * group * ", test_against_name_clean,
-          " + time:", test_against_name_clean, " + (1|id)"
-        )
+  
         model_formula <- as.formula(model_formula_str)
 
         # Fit the mixed model to the filtered and merged data using the dynamic formula
@@ -2786,7 +2796,7 @@ if (!is.null(lipidcomposition) && lipidcomposition != "ratio") {
         index_string <- paste("timePost:", test_against_name_clean, sep = "")
 
         correlation_results$mixed_p_all[current_row_index] <- model_summary$coefficients[index_string, "Pr(>|t|)"]
-        correlation_results$mixed_cor_all[current_row_index] <- model_summary$coefficients[index_string, "Pr(>|t|)"]
+        correlation_results$mixed_cor_all[current_row_index] <- model_summary$coefficients[index_string, "Estimate"]
       },
       error = function(e) {
         # Handle error
@@ -4582,7 +4592,7 @@ est_df <- est_df[est_df$lipid %in% pvals_df$lipid, ]
 # Prepare data for plotting lipid composition within each lipid class
 est_and_p_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp)
 # Outlier rm
-est_and_p_lipid_comp <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp.outlierRM)  
+est_and_p_lipid_comp.outlierRM <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp.outlierRM)  
 
 
 # Prepare data for plotting lipid classes
@@ -4750,8 +4760,8 @@ for (lipid_class in unique_lipid_classes) {
                lipid_composition = lipid_composition,
                lipid_class = lipid_class,
                detection_limits = detection_limits,
-               p_val_df = est_and_p_lipid_class_and_comp$p.vals,
-               p_val_df_outlierRM = est_and_p_lipid_class_and_comp.outlierRM$p.vals,
+               p_val_df = est_and_p_lipid_comp$p.vals,
+               p_val_df_outlierRM = est_and_p_lipid_comp.outlierRM$p.vals,
                unit = "pmol_mg",
                save_subfolder = "")
  
@@ -4883,8 +4893,8 @@ for (lipid_class in unique_lipid_classes) {
   plot_lipid_class(lipidomicsDF = lipidomicsDF[lipidomicsDF$outlier==FALSE | is.na(lipidomicsDF$outlier),],
                    lipid_class = lipid_class,
                    detection_limits = detection_limits,
-                   p_val_df = est_and_p_lipid_class_and_comp$p.vals,
-                   p_val_df.outlierRM = est_and_p_lipid_class_and_comp.outlierRM$p.vals,
+                   p_val_df = est_and_p_pvals_lipid_class$p.vals,
+                   p_val_df.outlierRM = est_and_p_pvals_lipid_class.outlierRM$p.vals,
                    unit = "sum_pmol_mg",
                    save_subfolder = "")
                    
@@ -4979,8 +4989,10 @@ for (lipid_class in unique_lipid_classes) {
 ### Prepare data
 
 ```{r}
-pvals_df <- est_and_p_lipid_class_and_comp.outlierRM$p.vals
-estimates_df <- est_and_p_lipid_class_and_comp.outlierRM$estimates
+# When class and composition is analysed together, merge p-values and correlations
+
+pvals_df <- rbind(est_and_p_pvals_lipid_class.outlierRM$p.vals, est_and_p_lipid_comp.outlierRM$p.vals)
+estimates_df <- rbind(est_and_p_pvals_lipid_class.outlierRM$estimates, est_and_p_lipid_comp.outlierRM$estimates)
 
 # Select the specified columns for hm_data.p-vals matrix
 pvals_df <- pvals_df[ , c("lipid", "Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
