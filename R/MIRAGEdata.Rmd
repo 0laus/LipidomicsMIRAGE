@@ -429,12 +429,12 @@ sums_df <- lipidomicsDF %>%
 sums_wide <- sums_df %>%
   pivot_wider(names_from = lipidClass, values_from = sum_pmol_mg)
 
-# Calculate the PE/PC ratio
+# Calculate the PC/PE ratio
 ratios_df <- sums_wide %>%
-  mutate(lipidClass = "PE.PC",
+  mutate(lipidClass = "PC.PE",
          lipidComposition = "ratio",
          pmol = NA_real_,
-         pmol_mg = PE / PC,
+         pmol_mg = PC / PE,
          within_threshold = NA) %>%
   select(-PE, -PC)# Remove intermediate PE and PC columns
 
@@ -843,7 +843,7 @@ mixedmodel_pre_post_sat <- function(dataset, response_var, lipidclass, lipidcomp
   # RUN FUNCTION
 # Use map to iterate over lipid classes
 
-unique_lipid_classes.noRatios <- unique_lipid_classes[!unique_lipid_classes == c("PE.PC", "Cer ratio")]
+unique_lipid_classes.noRatios <- unique_lipid_classes[!unique_lipid_classes == c("PC.PE", "Cer ratio")]
 
 # Saturated
 result.lipid.pre_post_sat <- map(unique_lipid_classes.noRatios, ~ mixedmodel_pre_post_sat(lipidomicsDF_saturation, "sat_proportion", .x))
@@ -1049,7 +1049,7 @@ plot <- ggplot(filtered_data, aes(
 
   # RUN FUNCTION
 # Loop to call the plotting function for each lipid class
-unique_lipid_classes.noRatios <- unique_lipid_classes[!unique_lipid_classes == c("PE.PC", "Cer ratio")]
+unique_lipid_classes.noRatios <- unique_lipid_classes[!unique_lipid_classes == c("PC.PE", "Cer ratio")]
 
 for (lipid_class in unique_lipid_classes.noRatios) {
 # Saturated
@@ -1096,7 +1096,7 @@ pvals_df <- pvals_df[, common_cols, drop = FALSE]
 ### Divide dataframe based on lipid groups
 # Define lipid groups
 lipids_groups <- list(
-  gr_all = c("TAG", "1,2-DG", "1,3-DG", "AC", "PC", "PE.PC ratio", "PE", "SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer", "LPC", "LPE", "LPG", "LPI", "LPS", "PA", "PS", "PG", "PI")
+  gr_all = c("TAG", "1,2-DG", "1,3-DG", "AC", "PC", "PC.PE ratio", "PE", "SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer", "LPC", "LPE", "LPG", "LPI", "LPS", "PA", "PS", "PG", "PI")
 )
 
 ### Divide dataframe based on lipid groups with lipid as row name
@@ -1513,7 +1513,7 @@ for (saturation_type in c("sat_proportion", "unsat_proportion", "unsat_mono_prop
   correlation_values_ch_saturation <- data.frame()
   
  #Loop over each lipid class and make plots
- for (lipid_class in unique_lipid_classes[unique_lipid_classes != c("PE.PC", "Cer ratio")]) {
+ for (lipid_class in unique_lipid_classes[unique_lipid_classes != c("PC.PE", "Cer ratio")]) {
    print( paste0("Analysing ",lipid_class, " - ", saturation_type, "..."))
    
    # Organize data
@@ -1597,7 +1597,7 @@ heatmap_changes_sat <- function(test_against_input, save_name){
   
 # Group lipidclasses to make multiple, clean heatmaps
 lipids_groups <- list(
-  gr_all = c("TAG", "1,2-DG", "1,3-DG", "AC", "PC", "PE.PC ratio", "PE", "SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer", "LPC", "LPE", "LPG", "LPI", "LPS", "PA", "PS", "PG", "PI")
+  gr_all = c("TAG", "1,2-DG", "1,3-DG", "AC", "PC", "PC.PE ratio", "PE", "SPM", "SPH", "Cer", "dhCer", "GluCer", "LacCer", "GalCer", "LPC", "LPE", "LPG", "LPI", "LPS", "PA", "PS", "PG", "PI")
 )
 
 # Define function to filter and sort lipids based on group names
@@ -2055,7 +2055,7 @@ for (sat_type in c("sat_proportion", "unsat_proportion", "unsat_mono_proportion"
   corrrelation_results_crossSection_sat <- data.frame()
   
  #Loop over each lipid class and make plots
- for (lipid_class in unique_lipid_classes[unique_lipid_classes != c("PE.PC", "Cer ratio")]) {
+ for (lipid_class in unique_lipid_classes[unique_lipid_classes != c("PC.PE", "Cer ratio")]) {
    
    print( paste0( "Analysing ", lipid_class, " - ", sat_type, "..."))
    
@@ -2939,7 +2939,7 @@ correlation_values_ch_class <- data.frame()
 
 # Loop over each lipid composition
 unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
-for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PE.PC"]) {
+for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PC.PE"]) {
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
   for (lipid_composition in lipid_compositions_in_class) {
     
@@ -3189,7 +3189,7 @@ heatmap_changes <- function(test_against_input, save_name)
 lipids_groups <- list(
   gr_tag = c("TAG"),  # Triacylglycerols
   gr_dg_ac = c("1,2-DG", "1,3-DG", "AC"),  # Diglycerides and Acyl carnitines
-  gr_pc = c("PC", "PE.PC"),  # Phosphatidylcholines and ratio
+  gr_pc = c("PC", "PC.PE"),  # Phosphatidylcholines and ratio
   gr_pe = c("PE"),  # Phosphatidylethanolamines
   gr_sphingolipids = c("SPM", "SPH", "Cer", "Cer ratio", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingolipids: Sphingomyelins, Sphingosines, Ceramides and derivatives
   gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS"),  # Lysophospholipids
@@ -3838,7 +3838,7 @@ unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
 
 
 
-for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PE.PC"]) {
+for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PC.PE"]) {
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
   
   for (lipid_composition in lipid_compositions_in_class) {
@@ -4290,12 +4290,12 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
 # Define lipidclasses and compositions to use by removing the ratios
 lipid_classes <- unique(unique_combinations$lipidClass[!unique_combinations$lipidClass == "Cer ratio"])
   
-lipid_classes_per_comp <- unique_combinations$lipidClass[!unique_combinations$lipidClass == "PE.PC"]
+lipid_classes_per_comp <- unique_combinations$lipidClass[!unique_combinations$lipidClass == "PC.PE"]
 
-lipid_compositions <- unique_combinations$lipidComposition[!unique_combinations$lipidClass == "PE.PC"]
+lipid_compositions <- unique_combinations$lipidComposition[!unique_combinations$lipidClass == "PC.PE"]
 
 # Run function for lipid composition
-# PE.PC is not analysed as a composition, but only as class
+# PC.PE is not analysed as a composition, but only as class
 result.lipid.pre_post.class_comp <- pmap(
   list(lipidClass = lipid_classes_per_comp,
        lipidComposition = lipid_compositions),
@@ -4751,7 +4751,7 @@ mean_data_comp <- filtered_data %>%
 }
 
 # Loop to call the plotting function for each combination of lipid_class and lipid_composition
-unique_lipid_classes <- unique(lipidomicsDF$lipidClass[!lipidomicsDF$lipidClass == "PE.PC"])
+unique_lipid_classes <- unique(lipidomicsDF$lipidClass[!lipidomicsDF$lipidClass == "PC.PE"])
 
 for (lipid_class in unique_lipid_classes) {
   lipid_compositions_in_class <- unique(lipidomicsDF$lipidComposition[lipidomicsDF$lipidClass == lipid_class])
@@ -4834,7 +4834,7 @@ mean_data_class <- pmol_mg_class_sum %>%
   summarise(mean_class = mean(!!sym(unit), na.rm = TRUE), .groups = 'drop')
   
 # Dynamic Y-labels
-if("PE.PC" %in% filtered_data$lipidClass) {
+if("PC.PE" %in% filtered_data$lipidClass) {
   y_label <- "PE/PC ratio"
 }
 else {
@@ -5294,7 +5294,6 @@ ggsave( paste0( getwd(), "/outputs/pre_post/volcano/prePost_volcano.jpg"), plot 
 pvals_df_heatMap <- data.frame(pvals_df, check.names = FALSE)
 estimates_df_heatMap <- estimates_df_plotData
 
-
 rownames(pvals_df_heatMap) <- pvals_df_heatMap$lipid
 rownames(estimates_df_heatMap) <- estimates_df_heatMap$lipid
 
@@ -5315,7 +5314,7 @@ pvals_df_heatMap <- pvals_df_heatMap[, common_cols, drop = FALSE]
 lipids_groups <- list(
   gr_tag = c("TAG"),  # Triacylglycerols
   gr_dg_ac = c("1,2-DG", "1,3-DG", "AC"),  # Diglycerides and Acyl carnitines
-  gr_pc = c("PC", "PE.PC"),  # Phosphatidylcholines and ratio
+  gr_pc = c("PC", "PC.PE"),  # Phosphatidylcholines and ratio
   gr_pe = c("PE"),  # Phosphatidylethanolamines
   gr_sphingolipids = c("SPM", "SPH", "Cer", "Cer ratio", "dhCer", "GluCer", "LacCer", "GalCer"),  # Sphingolipids: Sphingomyelins, Sphingosines, Ceramides and derivatives
   gr_lyso = c("LPC", "LPE", "LPG", "LPI", "LPS"),  # Lysophospholipids
@@ -5699,13 +5698,13 @@ if (!dir.exists(output_dir)) {
 
 # Iterate over each unique combination of lipidClass and lipidComposition
 for (i in 1:nrow(unique_combinations)) {  
-  # is this needed? [unique_combinations$lipidClass != c("Cer ratio", "PE.PC")
+  # is this needed? [unique_combinations$lipidClass != c("Cer ratio", "PC.PE")
   class <- unique_combinations$lipidClass[i]
   comp <- unique_combinations$lipidComposition[i]
   
   print( paste0("Analysing ",class, " ", comp))
   
-   # class <- "PE.PC"
+   # class <- "PC.PE"
    # comp <- "ratio"
   
   # Initialize the plotting layout before saving the plots
