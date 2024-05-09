@@ -245,20 +245,24 @@ define_outliers <- function(df, value_col, outlier_col_name){
   
   # Loop through each unique class and composition
   for (class in unique(df$lipidClass)){
-    for (comp in unique(df$lipidComposition)){
+    for (comp in unique(df$lipidComposition[df$lipidClass == class])){
+      
       
       # Used as an imputation for outlier
-      median_value <- median(df[[value_col]][df$lipidClass == class & df$lipidComposition == comp],na.rm = TRUE)
+      median_value <- median(df[[value_col]][df$lipidClass == class & df$lipidComposition == comp & df$pmol_mg > 0],na.rm = TRUE)
       
       # Identify indices for current class and composition
-      indices <- which(df$lipidClass == class & df$lipidComposition == comp & df$pmol_mg > 0)
+      indices <- which(df$lipidClass == class & df$lipidComposition == comp)
       
       # To not double count the same values for change pre to post, only pre is used
       indices_change <- which(df$lipidClass == class & df$lipidComposition == comp & df$time == "Pre")
       
       # Calculate the Q1, Q3, and IQR for the current subgroup
-      Q1 <- quantile(df[[value_col]][indices], 0.25, na.rm = TRUE)
-      Q3 <- quantile(df[[value_col]][indices], 0.75, na.rm = TRUE)
+      subset_values <- df[[value_col]][indices]
+      positive_values <- subset_values[subset_values > 0]
+      
+      Q1 <- quantile(positive_values, 0.25, na.rm = TRUE)
+      Q3 <- quantile(positive_values, 0.75, na.rm = TRUE)
       IQR <- Q3 - Q1
       
       Q1_change <- quantile(df[[dyn_difference_name]][indices_change], 0.25, na.rm = TRUE)
@@ -275,8 +279,8 @@ define_outliers <- function(df, value_col, outlier_col_name){
       
       df[[change_outlier_name]][indices] <- df[[dyn_difference_name]][indices] > upper_bound_change
       
-    
-      # Add a outlier column with TRUE values if both of the above outlier cols are TRUE and if it's the highest index to maximally make 1 data point as an outlier.
+      
+      # Add a outlier column with TRUE values if both of the above outlier cols are TRUE
       for (ind in indices){
         
         df[[outlier_col_name]][ind] <- df[[composition_outlier_name]][ind] & df[[change_outlier_name]][ind]
@@ -289,6 +293,7 @@ define_outliers <- function(df, value_col, outlier_col_name){
       }
     }
   }
+  browser()
   
  # Only make highest value within each composition and class stay TRUE as an outlier
  df <- df %>%
@@ -296,9 +301,9 @@ define_outliers <- function(df, value_col, outlier_col_name){
    group_by(lipidComposition, lipidClass) %>%
    mutate(
      max_value = max(.data[[value_col]], na.rm = TRUE),
-     outlier = if_else(.data[[value_col]] == max_value, outlier, FALSE)  # Set outlier to FALSE if not max
+     outlier = if_else(.data[[value_col]] == max_value, outlier, FALSE)
    ) %>%
-   select(-max_value)  # Remove the max_value column
+   select(-max_value) 
   
   return(df)
 }
@@ -309,10 +314,10 @@ lipidomicsDF <- define_outliers(df = lipidomicsDF,
                                 value_col = "pmol_mg",
                                 outlier_col_name = "outlier")
 
-# On log adjusted
- lipidomicsDF <- define_outliers(df = lipidomicsDF,
-                                 value_col = "pmol_mg_log",
-                                 outlier_col_name = "outlier_log")
+# # On log adjusted
+#  lipidomicsDF <- define_outliers(df = lipidomicsDF,
+#                                  value_col = "pmol_mg_log",
+#                                  outlier_col_name = "outlier_log")
 
  
 ```
@@ -410,7 +415,7 @@ lipidomicsDF_saturation <- lipidomicsDF_saturation %>%
   #View(lipidomicsDF_saturation)
 ```
 
-**Add PE/PC ratio** Outliers are handled by calculating from imputed values as the PE and PC classes are summed. As they are analysed on a lipid class level, Outlier status is therefore set to FALSE.
+**Add PC/PE ratio** Outliers are handled by calculating from imputed values as the PE and PC classes are summed. As they are analysed on a lipid class level, Outlier status is therefore set to FALSE.
 
 ```{r}
 add_ratio_lipidomics <- function (lipidomicsDF)
@@ -2619,6 +2624,63 @@ lipidomics_wide <- lipidomics_wide %>%
 }
 ```
 
+## Adjusted analyses - under dev
+My take on 8/6-2024
+A standard linear model on changes. Can be used to correct for factors that may change correlations, like age and MVPA.
+A mixed model may be used to look at the effects of characteristics across the whole dataset, e.g. if there is a correlation between certain lipids and an endpoint.
+```{r}
+lipid_class <- "1,2-DG"
+
+
+df <- as.data.frame(correlation_df[!is.na(correlation_df$pmol_mg_ch_id), ])
+
+model <- lm(pmol_mg_ch_id ~ rd_ss2kg_ffm_insulin_ch + age_pre + mvpa_mins_day_post, data = df)
+
+sum <- summary(model)
+
+print(sum)
+
+
+merged_data <- left_join(lipidomicsDF, mirage_data_long_ch, by = c("id", "time"))
+
+merged_data_filtered <- filter(merged_data, lipidClass == lipid_class)
+
+    merged_data_filtered$time <- factor(merged_data_filtered$time)
+
+    # Relevel 'time' so 'Pre' is the reference level
+    merged_data_filtered$time <- relevel(merged_data_filtered$time, ref = "Pre")
+    # Relevel 'group' so 'HED' is the reference level 
+    merged_data_filtered$group <- relevel(merged_data_filtered$group, ref = "HED")
+    
+model_mixed_simple <- lmer(pmol_mg ~ time + rd_ss2kg_ffm_insulin +
+                      (1 | id) +
+                      (1 + time | lipidComposition),
+                    data = merged_data_filtered)
+
+print("Simple model")
+summary(model_mixed_simple)
+
+    
+model_mixed <- lmer(pmol_mg ~ time + rd_ss2kg_ffm_insulin + age + mvpa_mins_day +
+                      (1 | id) +
+                      (1 + time | lipidComposition),
+                    data = merged_data_filtered)
+
+print("Corrected model")
+summary(model_mixed)
+
+
+
+
+# Define the clinical variables once
+clinical_vars <- c("bmi_pre", "hgb_a1c_pre", "vo2kg_ffm_pre", "max_oxphos_pre", "mvpa_mins_day_pre", "age_pre", "fat_mass_dxa_pre", "le_pre", "ldl_pre", "cholesterol_pre")
+
+
+```
+
+
+
+
 ## Statistics (function)
 
 Function to get correlation between changes of defined parameters
@@ -2754,7 +2816,6 @@ if (!is.null(lipidcomposition)){
     merged_data_filtered <- filter(merged_data, lipidClass == lipidclass)
 }
     
-
     # Ensure 'time' and 'group' are factors
     merged_data_filtered$time <- as.factor(merged_data_filtered$time)
     merged_data_filtered$group <- as.factor(merged_data_filtered$group)
@@ -2975,7 +3036,7 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PC.PE"]) {
 }
 
 # Loop over each lipid class and make plots
-for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) {
+for (lipid_class in c("TAG")){ # unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) {
   print( paste0 ("Analysing lipid class: ", lipid_class, "..."))
   # Organize data
   correlation_df <- prepare_and_combine_data(
@@ -2986,25 +3047,25 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) 
     lipidcomposition = NULL
   )
 
-  # Calculate correlations for changes
-  correlation_values_ch_class <- rbind(correlation_values_ch_class,
-                                       correlation_of_change(
-    correlation_df,
-    lipidomicsDF,
-    mirage_data_long_ch,
-    mirage_ch_vars,
-    lipid_class,
-    lipidcomposition = NULL))
-
-# Plot data - un-comment if to be used again
- correlation_change_plot(
-   correlation_df,
-   mirage_ch_vars,
-   correlation_values_ch_class,
-   savePathClass,
-   lipid_class,
-   lipidcomposition = NULL
- )
+#   # Calculate correlations for changes
+#   correlation_values_ch_class <- rbind(correlation_values_ch_class,
+#                                        correlation_of_change(
+#     correlation_df,
+#     lipidomicsDF,
+#     mirage_data_long_ch,
+#     mirage_ch_vars,
+#     lipid_class,
+#     lipidcomposition = NULL))
+# 
+# # Plot data - un-comment if to be used again
+#  correlation_change_plot(
+#    correlation_df,
+#    mirage_ch_vars,
+#    correlation_values_ch_class,
+#    savePathClass,
+#    lipid_class,
+#    lipidcomposition = NULL
+#  )
 }
 
 ## SAVE AND LOAD VARIABLES TO NOT HAVE TO RERUN ALL THE ANALYSIS
@@ -4324,6 +4385,7 @@ result.lipid.pre_post.class.outlierRM <- flatten(result.lipid.pre_post.class.out
 
 ### QC: t-test on class
 ```{r}
+library(broom)
 # Calculate class sums for each id
 class_sums <- lipidomicsDF %>% 
   group_by(id, lipidClass, time, group) %>% 
@@ -4458,7 +4520,8 @@ p_value_long$lipidClass <- factor(p_value_long$lipidClass, levels = unique(p_val
 ggplot(p_value_long, aes(x = lipidClass, y = p_value, fill = p_value_type)) +
   geom_col(position = position_dodge(width = 0.8), alpha = 0.8) +
   geom_hline(yintercept = 0.05, linetype = "dashed", color = "red") + 
-  labs(title = "Comparison of P-values: Mixed models vs t-tests on delta values",
+  labs(title = "P-values comparisons: Pre-post for DIWL vs WLEX",
+       subtitle = "Mixed model: lipidcomposition and id as random factors \nt-tests: calculated on lipidclass pre-post deltas",
        x = "Lipid Class",
        y = "P-value",
        fill = "P-value Type") +
@@ -4789,6 +4852,7 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, detection_limits, p_val_
   filtered_data <- lipidomicsDF %>%
     filter(lipidClass == lipid_class & !is.na(time))
   
+  
 # MAKE SUM FOR EACH ID
 pmol_mg_class_sum <- filtered_data %>%
   group_by(lipidClass, group, id, time) %>%
@@ -4845,8 +4909,8 @@ else {
   )
 }
 
+# Set label height
 label_height <- max(pmol_mg_class_sum[[unit]])*1
- # If not working change to 3.0
 
 # Create the plot
 plot <- ggplot(pmol_mg_class_sum, aes(
@@ -4871,8 +4935,8 @@ plot <- ggplot(pmol_mg_class_sum, aes(
   annotate("text", x = c(1.5, 3.5, 5.5), y = label_height, label = annotation_pvals_pre_post, size = 1.75) +
   theme_minimal() +
   theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right",
-        legend.title.align = 0.5, plot.title = element_text(hjust = 0.5), legend.text = element_text(size = 6),
-        legend.title = element_text(size = 6), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(),
+        legend.title = element_text(hjust = 0.5, size = 6), legend.text = element_text(size = 6), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(),plot.title = element_text(hjust = 0.5), 
+        #legend.title = element_text(size = 6), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(),
         plot.subtitle = element_text(size = 5, hjust = 0.5))
 
 
@@ -4890,7 +4954,7 @@ plot <- ggplot(pmol_mg_class_sum, aes(
 unique_lipid_classes <- unique(lipidomicsDF$lipidClass[!lipidomicsDF$lipidClass == "Cer ratio"])
 
 for (lipid_class in unique_lipid_classes) {
-  plot_lipid_class(lipidomicsDF = lipidomicsDF[lipidomicsDF$outlier==FALSE | is.na(lipidomicsDF$outlier),],
+  plot_lipid_class(lipidomicsDF = lipidomicsDF,
                    lipid_class = lipid_class,
                    detection_limits = detection_limits,
                    p_val_df = est_and_p_pvals_lipid_class$p.vals,
