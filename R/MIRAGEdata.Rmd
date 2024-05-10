@@ -28,6 +28,7 @@ library(lmerTest) # p-values for mixed models
 library(correlation) # to analyse data for correlations
 library(ComplexHeatmap); library(circlize) # to make complex heatmaps
 library(ggrepel) # to avoid overlapping labels
+library(table1)# library(labelled) # to create a table 1 
 ```
 
 # Project settings
@@ -44,6 +45,9 @@ outlier_IQR_factor <- 4
 
 # Factor above LLOQ to discard a value NB currently not used
 LLOQ_discard_factor <- 2
+
+# Set too TRUE to remove outliers. Set to anything else to not remove outliers
+outlier_remove <- FALSE
 ```
 
 # Load and prepare data
@@ -232,7 +236,9 @@ define_outliers <- function(df, value_col, outlier_col_name){
     spread(key = time, value = !!sym(value_col)) %>%
     mutate(!!dyn_difference_name := abs(Post - Pre)) %>%
     # Select only the necessary columns for the join
-    select(id, lipidClass, lipidComposition, !!sym(dyn_difference_name))
+    select(id, lipidClass, lipidComposition, !!sym(dyn_difference_name)) %>% 
+    ungroup()
+      
   
   # Join the differences back to the original dataframe
   df <- lipidomicsDF %>%
@@ -274,11 +280,14 @@ define_outliers <- function(df, value_col, outlier_col_name){
       upper_bound <- Q3 + (outlier_IQR_factor * IQR)
       upper_bound_change <- Q3_change + (outlier_IQR_factor * IQR_change)
       
-      # Update the 'outlier' column based on calculated bounds
-      df[[composition_outlier_name]][indices] <- df[[value_col]][indices] > upper_bound
-      
-      df[[change_outlier_name]][indices] <- df[[dyn_difference_name]][indices] > upper_bound_change
-      
+      # Update the 'outlier' column based on calculated bounds based on outlier toggle found in project settings
+      if (outlier_remove == TRUE){
+        df[[composition_outlier_name]][indices] <- df[[value_col]][indices] > upper_bound
+        df[[change_outlier_name]][indices] <- df[[dyn_difference_name]][indices] > upper_bound_change
+      }else{
+         df[[composition_outlier_name]][indices] <- FALSE
+         df[[change_outlier_name]][indices] <- FALSE
+      }
       
       # Add a outlier column with TRUE values if both of the above outlier cols are TRUE
       for (ind in indices){
@@ -286,14 +295,13 @@ define_outliers <- function(df, value_col, outlier_col_name){
         df[[outlier_col_name]][ind] <- df[[composition_outlier_name]][ind] & df[[change_outlier_name]][ind]
         
         # Add col with imputed values to fill in outliers
-        
+
         ifelse(df[[outlier_col_name]][ind] == TRUE,
                df[[dyn_imputed_name]][ind] <- median_value,
                df[[dyn_imputed_name]][ind] <- df[[value_col]][ind])
       }
     }
   }
-  browser()
   
  # Only make highest value within each composition and class stay TRUE as an outlier
  df <- df %>%
@@ -303,8 +311,10 @@ define_outliers <- function(df, value_col, outlier_col_name){
      max_value = max(.data[[value_col]], na.rm = TRUE),
      outlier = if_else(.data[[value_col]] == max_value, outlier, FALSE)
    ) %>%
-   select(-max_value) 
-  
+   select(-max_value) %>% 
+ ungroup()
+ 
+ 
   return(df)
 }
 
@@ -342,6 +352,7 @@ Make saturation columns, where first column is defined by the number of double b
 ```{r}
 # Make saturation columns and ether bond column
 lipidomicsDF <- lipidomicsDF %>%
+  
   # Convert factors to character if not already
   mutate(lipidComposition = as.character(lipidComposition)) %>%
   # Create new columns for sat_level_1, sat_level_2, and count of 'e'
@@ -379,7 +390,8 @@ summarized_saturations <- lipidomicsDF %>%
     class_ether_pmol_mg = sum(pmol_mg_imp[ether_bond == 1], na.rm = TRUE),
     
     .groups = 'drop'
-  )
+  ) %>% 
+  ungroup()
 
 # Prepare the main data for joining
 lipidomicsDF_saturation <- lipidomicsDF %>%
@@ -404,15 +416,14 @@ lipidomicsDF_saturation <- lipidomicsDF_saturation %>%
   )
 
          
-# # Check sum of pmol_mg
-# lipidomicsDF_saturation_sum <- lipidomicsDF_saturation %>%
-#   rowwise() %>%
-#   mutate(sum_pmol_mg = sum(c(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat3_pmol_mg, 
-#                                class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg, 
-#                                class_sat_pmol_mg), na.rm = TRUE)) %>%
-#   ungroup()
-# 
-  #View(lipidomicsDF_saturation)
+# Check sum of pmol_mg
+lipidomicsDF_saturation_sum <- lipidomicsDF_saturation %>%
+  rowwise() %>%
+  mutate(sum_pmol_mg = sum(c(class_unsat1_pmol_mg, class_unsat2_pmol_mg, class_unsat3_pmol_mg,
+                               class_unsat4_pmol_mg, class_unsat5_pmol_mg, class_unsat6_pmol_mg,
+                               class_sat_pmol_mg), na.rm = TRUE)) %>%
+  ungroup()
+
 ```
 
 **Add PC/PE ratio** Outliers are handled by calculating from imputed values as the PE and PC classes are summed. As they are analysed on a lipid class level, Outlier status is therefore set to FALSE.
@@ -868,8 +879,6 @@ result.lipid.pre_post_poly_unsat <- flatten(result.lipid.pre_post_poly_unsat)
 
 
 
-
-
 ####### Make data ready for plotting
 
 
@@ -1009,6 +1018,10 @@ mean_data_class <- filtered_data %>%
   group_by(group, time) %>%
   summarise(mean_proportion = mean(!!sym(col_name), na.rm = TRUE), .groups = 'drop')
 
+# Set label height
+
+label_height <- max(filtered_data[[col_name]])*1
+
 # Create the plot
 plot <- ggplot(filtered_data, aes(
     x = factor(interaction(group, time, sep = " "),
@@ -1029,17 +1042,12 @@ plot <- ggplot(filtered_data, aes(
        subtitle = annotation_pvals_slope, 
        y = y_label,
        x = "") +
-  annotate("text", x = c(1.5, 3.5, 5.5), y = 1.1, label = annotation_pvals_pre_post, size = 2) +
+  annotate("text", x = c(1.5, 3.5, 5.5), y = label_height, label = annotation_pvals_pre_post, size = 2) +
   theme_minimal() +
   theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right",
         legend.title.align = 0.5, plot.title = element_text(hjust = 0.5), legend.text = element_text(size = 6),
         legend.title = element_text(size = 6), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(),
         plot.subtitle = element_text(size = 5, hjust = 0.5))
-
-  # Filter the LLOQ and ULOQ for the current lipid_class and set y-axis limits
-  #y_min <- min(pmol_mg_class_sum$sum_pmol_mg, na.rm = TRUE) * 0.95 # Adjusted
-  #y_max <- max(pmol_mg_class_sum$pmol_mg_znorm, na.rm = TRUE) * 1.05 # Adjusted
-  # plot <- plot + coord_cartesian(ylim = c(y_min, y_max))
 
   # Define the filename and save the plot
   filename <- paste0(
@@ -2467,12 +2475,216 @@ for (list_name in names(mirage_ch_vars)) {
 ```
 
 # Table 1 statistics
+```{r}
+####### Function to calculate p-values #########
+pvalue <- function(x, name) {
+    # Construct vectors of data y, and groups (strata) g
+  
+  y <- unlist(x)
+   g <- factor(rep(1:length(x), times=sapply(x, length)))
+     # Convert numeric levels in g to character labels
+levels(g) <- levels(mirage_included$group)
+
+# Create a new data frame (optional but often helpful)
+data <- data.frame(y = y, g = g)
+
+# Remove NA values for accurate t-test computation
+data_clean <- na.omit(data)
+
+# Subset data to include only DIWL and WLEX groups
+data_subset <- subset(data_clean, g %in% c("DIWL", "WLEX"))
+
+   if (is.numeric(y)) {  
+# Perform t-test on the subset
+p <- t.test(y ~ g, data = data_subset)$p.value
+ci <- t.test (y ~ g, data = data_subset)$conf.int
+
+#Calculate P-value on change
+# make _change name to get that col
+name_change <- sub("_pre$", "_change", name)
+
+# Filter and create the new data frame
+p_change_subset <- mirage_included %>%
+  filter(group %in% c("DIWL", "WLEX")) %>%
+  select(g = group, y = !!sym(name_change))  # renaming columns in the select statement
+
+p_change <- t.test (y ~ g, data = p_change_subset)$p.value
+ci_change <- t.test (y ~ g, data = p_change_subset)$conf.int
+
+ci_vals <- c("", sprintf("[%0.2f, %0.2f]", ci[1], ci[2]),
+      sprintf("[%0.2f, %0.2f]", ci_change[1], ci_change[2])
+      )
+
+    p_vals <- c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)),
+      sub("<", "&lt;", format.pval(p_change, digits=3, eps=0.001))
+      )
+    
+    return(ci_vals)
+    
+     # For categorical variables, do not return p-value
+} else {
+        # p <- chisq.test(table(y, g))$p.value
+        # p_vals <-c("", "", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+        # return (p_vals)
+    }
+  
+}
+    #############
+
+# Filter data
+mirage_included <- mirage_data %>%
+  filter(id %in% lipidomicsDF$id) %>%
+  mutate(
+    weight_change = weight_post - weight_pre,  # Calculate change in weight
+    rd_ss2kg_ffm_insulin_change = rd_ss2kg_ffm_insulin_post - rd_ss2kg_ffm_insulin_pre,
+    bmi_change = bmi_post - bmi_pre,
+    mvpa_mins_day_change = mvpa_mins_day_post - mvpa_mins_day_pre,
+    hgb_a1c_change = hgb_a1c_post - hgb_a1c_pre,
+    cholesterol_change = cholesterol_post - cholesterol_pre,
+    ldl_change = ldl_post - ldl_pre,
+    hdl_change = hdl_post - hdl_pre,
+    fat_mass_dxa_change = fat_mass_dxa_post - fat_mass_dxa_pre,
+    lean_mass_dxa_change = lean_mass_dxa_post - lean_mass_dxa_pre,
+    age_change = age_post - age_pre,
+    thigh_muscle_g_change = thigh_muscle_g_post - thigh_muscle_g_pre,
+    percent_imat_change = percent_imat_post - percent_imat_pre,
+    
+    
+    group = factor(group, levels = c("DIWL", "WLEX", "HED"))  # Example grouping
+  )
+
+# Making discrete variables as factors
+mirage_included$sex_0_male_1_female <- 
+  factor(mirage_included$sex_0_male_1_female, levels=c(0,1),
+         labels=c("Male", 
+                  "Female"))
+
+mirage_included$t2d_status <- 
+  factor(mirage_included$t2d_status, levels=c(1,0),
+         labels=c("Yes", 
+                  "No"))
+
+# Set labels
+label(mirage_included$sex_0_male_1_female) <- "Sex"
+label(mirage_included$age_pre) <- "Age"
+label(mirage_included$weight_pre) <- "Weight"
+label(mirage_included$bmi_pre) <- "BMI"
+label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "Insulin sensitivityᶜ"
+label(mirage_included$mvpa_mins_day_pre) <- "Physical activityᵃ"
+label(mirage_included$hgb_a1c_pre) <- "HbA1c"
+label(mirage_included$cholesterol_pre) <- "Total cholesterol"
+label(mirage_included$ldl_pre) <- "LDL cholesterol"
+label(mirage_included$hdl_pre) <- "HDL cholesterol"
+label(mirage_included$t2d_status) <- "Type 2-diabetes"
+label(mirage_included$fat_mass_dxa_pre) <- "Fat mass"
+label(mirage_included$lean_mass_dxa_pre) <- "Lean mass"
+label(mirage_included$thigh_muscle_g_pre) <- "Thigh muscle"
+label(mirage_included$percent_imat_pre) <- "Thigh IMATᵇ"
+
+
+# Set units
+# Set units for the variables using SI units
+units(mirage_included$age_pre) <- "years"
+units(mirage_included$weight_pre) <- "kg"
+units(mirage_included$bmi_pre) <- "kg/m"
+units(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "nmol/min/kg"  
+units(mirage_included$mvpa_mins_day_pre) <- "min"
+units(mirage_included$hgb_a1c_pre) <- "%"
+units(mirage_included$cholesterol_pre) <- "mmol/L" 
+units(mirage_included$ldl_pre) <- "mmol/L"  
+units(mirage_included$hdl_pre) <- "mmol/L"  
+units(mirage_included$t2d_status)  # T2D status might be categorical (e.g., Yes/No, 0/1)
+units(mirage_included$fat_mass_dxa_pre) <- "kg"  # Fat mass typically measured in kilograms
+units(mirage_included$lean_mass_dxa_pre) <- "kg"  # Lean mass typically measured in kilograms
+units(mirage_included$thigh_muscle_g_pre) <- "g"
+units(mirage_included$percent_imat_pre) <- "%"
+
+
+
+# Footnote
+footnote <-paste0 ("ᵃ Moderate to vigorous physical activity (MVPA) <br/>", # <br/> used as it's a html table
+"ᵇ Intramuscular adipose tissue<br/>",
+"ᶜ Glucose rate of disappearance normalized to insulin and fat-free mass")
+
+
+# Define a custom render function
+custom_render <- function(x, name, ...) {
+  
+  # Handling for numeric data
+  if (is.numeric(x)) {
+    
+    group_mean <- mean(x, na.rm = TRUE)
+
+    # Initialize the variable to store the current group
+current_group <- NA
+
+# Loop through each level of 'group' in the data frame
+for (group in levels(mirage_included$group)) {
+    # Calculate the mean for the current group for the specified column
+    group_mean_current <- mean(mirage_included[[name]][mirage_included$group == group], na.rm = TRUE)
+    
+    # Check if this group mean is equal to the overall mean
+    if (group_mean == group_mean_current) {
+        current_group <- group
+        break  # Exit the loop once the first matching group is found
+    }
+}
+ 
+# make _change name to get that col
+name_change <- sub("_pre$", "_change", name)
+
+# Calculate stats for baseline
+stats_pre <- stats.default(x)
+mean_sd_pre <- with(stats.apply.rounding(stats_pre, digits = 2),
+                        c("", sprintf("%s (%s)", MEAN, SD)))
+    
+
+    stats_change <- stats.default(mirage_included[[name_change]] [mirage_included$group == current_group])
+    mean_sd_change <- with(stats.apply.rounding(stats_change, digits = 2),
+                           sprintf("%s (%s)", MEAN, SD))
+
+    # Don't calculate stat changes for age
+if (name == "age_pre"){
+  summary_stat <- c("Baseline" = mean_sd_pre)
+}else{
+  summary_stat <- c("Baseline" = mean_sd_pre, "Change" = mean_sd_change)
+}
+    
+    
+    # Rename "Mean (SD)2" to "Mean (SD)"
+    names(summary_stat)[names(summary_stat) == "Baseline2"] <- "Baseline"
+    
+    
+    # Handling for categorical data
+    } else if (is.factor(x)) {
+        
+        #levels_stat <- paste(levels(x), collapse=", ")
+        summary_stat <- c("", sapply(stats.default(x), function(y) with(y,
+        sprintf("%d (%0.0f %%)", FREQ, PCT))))
+    } else {
+        summary_stat <- "Unsupported data type"
+    }
+    return(summary_stat)
+}
+
+
+# Generate the table with custom rendering for weight
+result_table <- table1(~ sex_0_male_1_female + t2d_status+ age_pre + weight_pre + bmi_pre + 
+                          fat_mass_dxa_pre + lean_mass_dxa_pre + thigh_muscle_g_pre + percent_imat_pre + rd_ss2kg_ffm_insulin_pre + 
+                          mvpa_mins_day_pre + hgb_a1c_pre + cholesterol_pre + ldl_pre + hdl_pre | group,
+                       data = mirage_included,
+                       render = custom_render,
+                       footnote = footnote,
+                       overall = FALSE,
+                       extra.col=list(`95% CI`=pvalue),
+                       extra.col.pos = c(3))
+
+# Print the table
+print(result_table)
+```
+
 
 ```{r}
-# Filter mirage subjects included in this study
-mirage_included <- mirage_data %>%
-    filter(id %in% lipidomicsDF$id)
-
 # Weight loss
 summary(mirage_included[mirage_included$group=="WLEX","weight_post"] - mirage_included[mirage_included$group=="WLEX","weight_pre"])
 
@@ -4274,23 +4486,12 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
   data_to_model$group <- factor(data_to_model$group, levels = c("HED", "DIWL", "WLEX"))
   data_to_model$time <- factor(data_to_model$time, levels = c("Pre", "Post"))
 
-#  # Remove Na rows
-#  data_to_model <- data_to_model[!is.na(data_to_model$pmol_mg), ]
-#
-#
-#  # Remove lipidcomposition with only 0
-#  data_to_model <- data_to_model %>%
-#    group_by(lipidComposition) %>%
-#    filter(any(pmol_mg != 0)) %>%
-#    ungroup()
-
 
   # Determine if lipidComposition can be a random effect
   if (!is.null(lipidcomposition) || length(unique(data_to_model$lipidComposition)) <= 1) {
     model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id)"))
   } else {
-    model_formula <- as.formula(paste(response_var, "~ time * group +
-                                      (1 | id) + (1 + time | lipidComposition)"))
+    model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id) + (1 + time | lipidComposition)"))
   }
 
   # Try-catch block for model fitting
