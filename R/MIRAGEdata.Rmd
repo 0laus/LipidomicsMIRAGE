@@ -1,5 +1,5 @@
 ---
-title: "MIRAGEdata"   
+Title: "MIRAGEdata"   
 purpose: To load, merge, explore, and plot lipidomics data and look for correlations with cardiometabolic endpoints the MIRAGE dataset.
 output:
 html_notebook: default
