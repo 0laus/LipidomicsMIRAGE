@@ -1908,7 +1908,7 @@ correlation_cross_sectional_sat <- function(correlation_df, lipidomicsDF, mirage
   # Loop over every mirage variables of interest
   for (i in seq_along(mirage_variables_of_interest)) {
     for (j in seq_along(mirage_variables_of_interest[[i]])){
-    
+     
       # Manipulate current variable name
       test_against_name <- mirage_variables_of_interest[[i]][[j]][1]
       test_against_name_clean <- sub("_pre$", "", test_against_name)

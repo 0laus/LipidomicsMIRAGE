@@ -1,0 +1,9 @@
+- look at outliers and see if same subject is the issue.
+
+- look into scaled imputed which is reported back from Metabolon, when they analyse.
+
+- look at different ratios of ceramides.
+
+- good idea to look at saturation levels.
+
+- agree with the combination of groups.
