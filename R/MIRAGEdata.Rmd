@@ -612,6 +612,30 @@ new_col_names <- sapply(names(mirage_data), function(col_name) {
 names(mirage_data) <- new_col_names
 ```
 
+**Adjust units in some columuns**
+```{r}
+# Cholesterol from mg/dl to mmol/l
+mirage_data$cholesterol_pre <- mirage_data$cholesterol_pre / 38.67
+mirage_data$cholesterol_post <- mirage_data$cholesterol_post / 38.67
+mirage_data$cholesterol_abs_ch <- mirage_data$cholesterol_abs_ch / 38.67
+
+mirage_data$hdl_pre <- mirage_data$hdl_pre / 38.67
+mirage_data$hdl_post <- mirage_data$hdl_post / 38.67
+mirage_data$hdl_abs_ch <- mirage_data$hdl_abs_ch / 38.67
+
+mirage_data$ldl_pre <- mirage_data$ldl_pre / 38.67
+mirage_data$ldl_post <- mirage_data$ldl_post / 38.67
+mirage_data$ldl_abs_ch <- mirage_data$ldl_abs_ch / 38.67
+
+# Triglycerides
+mirage_data$triglycerides_pre <- mirage_data$triglycerides_pre / 88.57
+mirage_data$triglycerides_post <- mirage_data$triglycerides_post / 88.57
+mirage_data$triglycerides_abs_ch <- mirage_data$triglycerides_abs_ch / 88.57
+
+```
+
+
+
 **Calculate additional rows**
 
 ```{r}
@@ -622,6 +646,7 @@ mirage_data$mvpa_mins_day_pre <- mirage_data$mpa_mins_day_pre + mirage_data$vpa_
 mirage_data$mvpa_mins_day_post <- mirage_data$mpa_mins_day_post + mirage_data$vpa_mins_day_post
 
 ```
+
 
 ### Select variables & long format
 
@@ -2847,62 +2872,6 @@ lipidomics_wide <- lipidomics_wide %>%
 }
 ```
 
-## Adjusted analyses - under dev
-My take on 8/6-2024
-A standard linear model on changes. Can be used to correct for factors that may change correlations, like age and MVPA.
-A mixed model may be used to look at the effects of characteristics across the whole dataset, e.g. if there is a correlation between certain lipids and an endpoint.
-```{r}
-lipid_class <- "1,2-DG"
-
-
-df <- as.data.frame(correlation_df[!is.na(correlation_df$pmol_mg_ch_id), ])
-
-model <- lm(pmol_mg_ch_id ~ rd_ss2kg_ffm_insulin_ch + age_pre + mvpa_mins_day_post, data = df)
-
-sum <- summary(model)
-
-print(sum)
-
-
-merged_data <- left_join(lipidomicsDF, mirage_data_long_ch, by = c("id", "time"))
-
-merged_data_filtered <- filter(merged_data, lipidClass == lipid_class)
-
-    merged_data_filtered$time <- factor(merged_data_filtered$time)
-
-    # Relevel 'time' so 'Pre' is the reference level
-    merged_data_filtered$time <- relevel(merged_data_filtered$time, ref = "Pre")
-    # Relevel 'group' so 'HED' is the reference level 
-    merged_data_filtered$group <- relevel(merged_data_filtered$group, ref = "HED")
-    
-model_mixed_simple <- lmer(pmol_mg ~ time + rd_ss2kg_ffm_insulin +
-                      (1 | id) +
-                      (1 + time | lipidComposition),
-                    data = merged_data_filtered)
-
-print("Simple model")
-summary(model_mixed_simple)
-
-    
-model_mixed <- lmer(pmol_mg ~ time + rd_ss2kg_ffm_insulin + age + mvpa_mins_day +
-                      (1 | id) +
-                      (1 + time | lipidComposition),
-                    data = merged_data_filtered)
-
-print("Corrected model")
-summary(model_mixed)
-
-
-
-
-# Define the clinical variables once
-clinical_vars <- c("bmi_pre", "hgb_a1c_pre", "vo2kg_ffm_pre", "max_oxphos_pre", "mvpa_mins_day_pre", "age_pre", "fat_mass_dxa_pre", "le_pre", "ldl_pre", "cholesterol_pre")
-
-
-```
-
-
-
 
 ## Statistics (function)
 
@@ -3270,25 +3239,25 @@ for (lipid_class in c("TAG")){ # unique_lipid_classes[!unique_lipid_classes == "
     lipidcomposition = NULL
   )
 
-#   # Calculate correlations for changes
-#   correlation_values_ch_class <- rbind(correlation_values_ch_class,
-#                                        correlation_of_change(
-#     correlation_df,
-#     lipidomicsDF,
-#     mirage_data_long_ch,
-#     mirage_ch_vars,
-#     lipid_class,
-#     lipidcomposition = NULL))
-# 
-# # Plot data - un-comment if to be used again
-#  correlation_change_plot(
-#    correlation_df,
-#    mirage_ch_vars,
-#    correlation_values_ch_class,
-#    savePathClass,
-#    lipid_class,
-#    lipidcomposition = NULL
-#  )
+  # Calculate correlations for changes
+  correlation_values_ch_class <- rbind(correlation_values_ch_class,
+                                       correlation_of_change(
+    correlation_df,
+    lipidomicsDF,
+    mirage_data_long_ch,
+    mirage_ch_vars,
+    lipid_class,
+    lipidcomposition = NULL))
+
+# Plot data - un-comment if to be used again
+ correlation_change_plot(
+   correlation_df,
+   mirage_ch_vars,
+   correlation_values_ch_class,
+   savePathClass,
+   lipid_class,
+   lipidcomposition = NULL
+ )
 }
 
 ## SAVE AND LOAD VARIABLES TO NOT HAVE TO RERUN ALL THE ANALYSIS
@@ -3308,6 +3277,61 @@ for (lipid_class in c("TAG")){ # unique_lipid_classes[!unique_lipid_classes == "
 # correlation_values_ch_class <- readRDS(file = file_correlation_values_ch_class)
 
 ```
+
+## Analysis with adjustments - under dev
+My take on 8/6-2024
+A standard linear model on changes. Can be used to correct for factors that may change correlations, like age and MVPA.
+A mixed model may be used to look at the effects of characteristics across the whole dataset, e.g. if there is a correlation between certain lipids and an endpoint.
+```{r}
+lipid_class <- "1,2-DG"
+
+
+df <- as.data.frame(correlation_df[!is.na(correlation_df$pmol_mg_ch_id), ])
+
+model <- lm(pmol_mg_ch_id ~ rd_ss2kg_ffm_insulin_ch + age_pre + mvpa_mins_day_post, data = df)
+
+sum <- summary(model)
+
+print(sum)
+
+
+merged_data <- left_join(lipidomicsDF, mirage_data_long_ch, by = c("id", "time"))
+
+merged_data_filtered <- filter(merged_data, lipidClass == lipid_class)
+
+    merged_data_filtered$time <- factor(merged_data_filtered$time)
+
+    # Relevel 'time' so 'Pre' is the reference level
+    merged_data_filtered$time <- relevel(merged_data_filtered$time, ref = "Pre")
+    # Relevel 'group' so 'HED' is the reference level 
+    merged_data_filtered$group <- relevel(merged_data_filtered$group, ref = "HED")
+    
+model_mixed_simple <- lmer(pmol_mg ~ time + rd_ss2kg_ffm_insulin +
+                      (1 | id) +
+                      (1 + time | lipidComposition),
+                    data = merged_data_filtered)
+
+print("Simple model")
+summary(model_mixed_simple)
+
+    
+model_mixed <- lmer(pmol_mg ~ time + rd_ss2kg_ffm_insulin + age + mvpa_mins_day +
+                      (1 | id) +
+                      (1 + time | lipidComposition),
+                    data = merged_data_filtered)
+
+print("Corrected model")
+summary(model_mixed)
+
+
+
+
+# Define the clinical variables once
+clinical_vars <- c("bmi_pre", "hgb_a1c_pre", "vo2kg_ffm_pre", "max_oxphos_pre", "mvpa_mins_day_pre", "age_pre", "fat_mass_dxa_pre", "le_pre", "ldl_pre", "cholesterol_pre")
+
+
+```
+
 
 ## Heatmap & volcano plot
 
