@@ -2499,7 +2499,7 @@ for (list_name in names(mirage_ch_vars)) {
 
 ```
 
-# Table 1 statistics
+# Table 1 
 ```{r}
 ####### Function to calculate p-values #########
 pvalue <- function(x, name) {
@@ -2510,7 +2510,7 @@ pvalue <- function(x, name) {
      # Convert numeric levels in g to character labels
 levels(g) <- levels(mirage_included$group)
 
-# Create a new data frame (optional but often helpful)
+# Create a new data frame
 data <- data.frame(y = y, g = g)
 
 # Remove NA values for accurate t-test computation
@@ -2519,12 +2519,12 @@ data_clean <- na.omit(data)
 # Subset data to include only DIWL and WLEX groups
 data_subset <- subset(data_clean, g %in% c("DIWL", "WLEX"))
 
-   if (is.numeric(y)) {  
+    if (is.numeric(y)) {  
 # Perform t-test on the subset
 p <- t.test(y ~ g, data = data_subset)$p.value
 ci <- t.test (y ~ g, data = data_subset)$conf.int
 
-#Calculate P-value on change
+# Calculate P-value on change
 # make _change name to get that col
 name_change <- sub("_pre$", "_change", name)
 
@@ -2533,6 +2533,7 @@ p_change_subset <- mirage_included %>%
   filter(group %in% c("DIWL", "WLEX")) %>%
   select(g = group, y = !!sym(name_change))  # renaming columns in the select statement
 
+
 p_change <- t.test (y ~ g, data = p_change_subset)$p.value
 ci_change <- t.test (y ~ g, data = p_change_subset)$conf.int
 
@@ -2540,10 +2541,15 @@ ci_vals <- c("", sprintf("[%0.2f, %0.2f]", ci[1], ci[2]),
       sprintf("[%0.2f, %0.2f]", ci_change[1], ci_change[2])
       )
 
-    p_vals <- c("", sub("<", "&lt;", format.pval(p, digits=2, eps=0.001)),
-      sub("<", "&lt;", format.pval(p_change, digits=2, eps=0.001))
-      )
-    
+
+if (name_change == "age_change"){
+p_vals <- c(sub("<", "&lt;", format.pval(p, digits=2, eps=0.001)),
+            sub("<", "&lt;", format.pval(p_change, digits=2, eps=0.001)))
+} else {
+  p_vals <- c("", sub("<", "&lt;", format.pval(p, digits=2, eps=0.001)),
+            sub("<", "&lt;", format.pval(p_change, digits=2, eps=0.001)))
+}
+        
     return(p_vals)
     
      # For categorical variables, do not return p-value
@@ -2551,33 +2557,34 @@ ci_vals <- c("", sprintf("[%0.2f, %0.2f]", ci[1], ci[2]),
         # p <- chisq.test(table(y, g))$p.value
         # p_vals <-c("", "", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
         # return (p_vals)
-    }
-  
 }
+}
+  
+
     #############
 
-# Filter data
+# FIlter data and calculate a % change column
 mirage_included <- mirage_data %>%
   filter(id %in% lipidomicsDF$id) %>%
   mutate(
-    weight_change = weight_post - weight_pre,  # Calculate change in weight
-    rd_ss2kg_ffm_insulin_change = rd_ss2kg_ffm_insulin_post - rd_ss2kg_ffm_insulin_pre,
-    bmi_change = bmi_post - bmi_pre,
-    mvpa_mins_day_change = mvpa_mins_day_post - mvpa_mins_day_pre,
-    vo2kg_ffm_change = vo2kg_ffm_post - vo2kg_ffm_pre,
+weight_change = (weight_post - weight_pre) / weight_pre * 100,
+rd_ss2kg_ffm_insulin_change = (rd_ss2kg_ffm_insulin_post - rd_ss2kg_ffm_insulin_pre) / rd_ss2kg_ffm_insulin_pre * 100,
+bmi_change = (bmi_post - bmi_pre) / bmi_pre * 100,
+mvpa_mins_day_change = (mvpa_mins_day_post - mvpa_mins_day_pre) / mvpa_mins_day_pre * 100,
+vo2kg_ffm_change = (vo2kg_ffm_post - vo2kg_ffm_pre) / vo2kg_ffm_pre * 100,
+hgb_a1c_change = (hgb_a1c_post - hgb_a1c_pre) / hgb_a1c_pre * 100,
+cholesterol_change = (cholesterol_post - cholesterol_pre) / cholesterol_pre * 100,
+ldl_change = (ldl_post - ldl_pre) / ldl_pre * 100,
+hdl_change = (hdl_post - hdl_pre) / hdl_pre * 100,
+fat_mass_dxa_change = (fat_mass_dxa_post - fat_mass_dxa_pre) / fat_mass_dxa_pre * 100,
+lean_mass_dxa_change = (lean_mass_dxa_post - lean_mass_dxa_pre) / lean_mass_dxa_pre * 100,
+age_change = (age_post - age_pre) / age_pre * 100,
+thigh_muscle_g_change = (thigh_muscle_g_post - thigh_muscle_g_pre) / thigh_muscle_g_pre * 100,
+percent_imat_change = (percent_imat_post - percent_imat_pre) / percent_imat_pre * 100,
+triglycerides_change = (triglycerides_post - triglycerides_pre) / triglycerides_pre * 100,
+
     
-    hgb_a1c_change = hgb_a1c_post - hgb_a1c_pre,
-    cholesterol_change = cholesterol_post - cholesterol_pre,
-    ldl_change = ldl_post - ldl_pre,
-    hdl_change = hdl_post - hdl_pre,
-    fat_mass_dxa_change = fat_mass_dxa_post - fat_mass_dxa_pre,
-    lean_mass_dxa_change = lean_mass_dxa_post - lean_mass_dxa_pre,
-    age_change = age_post - age_pre,
-    thigh_muscle_g_change = thigh_muscle_g_post - thigh_muscle_g_pre,
-    percent_imat_change = percent_imat_post - percent_imat_pre,
-    
-    
-    group = factor(group, levels = c("DIWL", "WLEX", "HED"))  # Example grouping
+    group = factor(group, levels = c("DIWL", "WLEX", "HED"))
   )
 
 # Making discrete variables as factors
@@ -2587,16 +2594,15 @@ mirage_included$sex_0_male_1_female <-
                   "Female"))
 
 mirage_included$t2d_status <- 
-  factor(mirage_included$t2d_status, levels=c(1,0),
-         labels=c("Yes", 
-                  "No"))
+  factor(mirage_included$t2d_status, levels=c(1),
+         labels=c("Yes"))
 
 # Set labels
 label(mirage_included$sex_0_male_1_female) <- "Sex"
 label(mirage_included$age_pre) <- "Age"
 label(mirage_included$weight_pre) <- "Weight"
 label(mirage_included$bmi_pre) <- "BMI"
-label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "Insulin sensitivityᶜ"
+label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "GIR/Iᶜ"
 label(mirage_included$mvpa_mins_day_pre) <- "Physical activityᵃ"
 label(mirage_included$hgb_a1c_pre) <- "HbA1c"
 label(mirage_included$cholesterol_pre) <- "Total cholesterol"
@@ -2608,6 +2614,7 @@ label(mirage_included$lean_mass_dxa_pre) <- "Lean mass"
 label(mirage_included$thigh_muscle_g_pre) <- "Thigh muscle"
 label(mirage_included$percent_imat_pre) <- "Thigh IMATᵇ"
 label(mirage_included$vo2kg_ffm_pre) <- "VO₂ peak"
+label(mirage_included$triglycerides_pre) <- "Triglycerides"
 
 
 # Set units
@@ -2615,25 +2622,26 @@ label(mirage_included$vo2kg_ffm_pre) <- "VO₂ peak"
 units(mirage_included$age_pre) <- "years"
 units(mirage_included$weight_pre) <- "kg"
 units(mirage_included$bmi_pre) <- "kg/m"
-units(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "nmol/min/kg"  
+units(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "mg/kgFFM/min/insulin"
 units(mirage_included$mvpa_mins_day_pre) <- "min"
 units(mirage_included$hgb_a1c_pre) <- "%"
-units(mirage_included$cholesterol_pre) <- "mmol/L" 
-units(mirage_included$ldl_pre) <- "mmol/L"  
-units(mirage_included$hdl_pre) <- "mmol/L"  
+units(mirage_included$cholesterol_pre) <- "mmol/l" 
+units(mirage_included$ldl_pre) <- "mmol/l"  
+units(mirage_included$hdl_pre) <- "mmol/l"  
 units(mirage_included$t2d_status)  # T2D status might be categorical (e.g., Yes/No, 0/1)
 units(mirage_included$fat_mass_dxa_pre) <- "kg"  # Fat mass typically measured in kilograms
 units(mirage_included$lean_mass_dxa_pre) <- "kg"  # Lean mass typically measured in kilograms
 units(mirage_included$thigh_muscle_g_pre) <- "g"
 units(mirage_included$percent_imat_pre) <- "%"
-units(mirage_included$vo2kg_ffm_pre) <- "ml · kg ffm⁻¹"
+units(mirage_included$vo2kg_ffm_pre) <- "ml/kgFFM"
+units(mirage_included$triglycerides_pre) <- "mmol/l"
 
 
 
 # Footnote
 footnote <-paste0 ("ᵃ Moderate to vigorous physical activity (MVPA) <br/>", # <br/> used as it's a html table
 "ᵇ Intramuscular adipose tissue<br/>",
-"ᶜ Glucose rate of disappearance normalized to insulin and fat-free mass")
+"ᶜ Glucose infusion rate normalized to insulin and fat-free mass")
 
 
 # Define a custom render function
@@ -2665,7 +2673,7 @@ name_change <- sub("_pre$", "_change", name)
 # Calculate stats for baseline
 stats_pre <- stats.default(x)
 
-if (name == "age_pre"){
+if (name == "age_pre" ){
   mean_sd_pre <- with(stats.apply.rounding(stats_pre, digits = 2),
                         c(sprintf("%s (%s)", MEAN, SD)))
 }else{
@@ -2673,22 +2681,22 @@ if (name == "age_pre"){
                         c("", sprintf("%s (%s)", MEAN, SD)))
 }
 
-    
-
     stats_change <- stats.default(mirage_included[[name_change]] [mirage_included$group == current_group])
     mean_sd_change <- with(stats.apply.rounding(stats_change, digits = 2),
                            sprintf("%s (%s)", MEAN, SD))
 
+    
+    
     # Don't calculate stat changes for age
-if (name == "age_pre"){
+if (name == "age_pre" | name == "bmi_pre"){
   summary_stat <- c("Baseline" = mean_sd_pre)
 }else{
-  summary_stat <- c("Baseline" = mean_sd_pre, "Change" = mean_sd_change)
+  summary_stat <- c("Baseline" = mean_sd_pre, "%-change" = mean_sd_change)
 }
     
     
     # Rename "Mean (SD)2" to "Mean (SD)"
-    names(summary_stat)[names(summary_stat) == "Baseline2"] <- "Baseline"
+    names(summary_stat)[names(summary_stat) == "Baseline2"] <- "baseline"
     
     
     # Handling for categorical data
@@ -2705,9 +2713,10 @@ if (name == "age_pre"){
 
 
 # Generate the table with custom rendering for weight
-result_table <- table1(~ + age_pre + sex_0_male_1_female  + t2d_status + vo2kg_ffm_pre  + weight_pre + bmi_pre +
+result_table <- table1(~ + age_pre + sex_0_male_1_female  + t2d_status + vo2kg_ffm_pre  + 
+                         bmi_pre + weight_pre + 
                           fat_mass_dxa_pre + lean_mass_dxa_pre + thigh_muscle_g_pre + percent_imat_pre + rd_ss2kg_ffm_insulin_pre
-                           + hgb_a1c_pre + cholesterol_pre + ldl_pre + hdl_pre | group,
+                           + hgb_a1c_pre + triglycerides_pre + cholesterol_pre + ldl_pre + hdl_pre | group,
                        data = mirage_included,
                        render = custom_render,
                        footnote = footnote,
@@ -2717,52 +2726,6 @@ result_table <- table1(~ + age_pre + sex_0_male_1_female  + t2d_status + vo2kg_f
 
 # Print the table
 print(result_table)
-```
-
-
-```{r}
-# Weight loss
-summary(mirage_included[mirage_included$group=="WLEX","weight_post"] - mirage_included[mirage_included$group=="WLEX","weight_pre"])
-
-# SD
-sd(mirage_included[mirage_included$group == "WLEX",]$weight_post - 
-   mirage_included[mirage_included$group == "WLEX",]$weight_pre)
-
-#DIWL
-summary(mirage_included[mirage_included$group=="DIWL","weight_post"] - mirage_included[mirage_included$group=="DIWL","weight_pre"])
-
-# SD
-sd(mirage_included[mirage_included$group == "DIWL",]$weight_post - 
-   mirage_included[mirage_included$group == "DIWL",]$weight_pre)
-
-#HED
-summary(mirage_included[mirage_included$group=="HED","weight_post"] - mirage_included[mirage_included$group=="HED","weight_pre"])
-
-# SD
-sd(mirage_included[mirage_included$group == "HED",]$weight_post - 
-   mirage_included[mirage_included$group == "HED",]$weight_pre)
-
-
-### Physical acitivity
-summary(mirage_included[mirage_included$group=="WLEX","daily_steps_steps_24hr_post"] - mirage_included[mirage_included$group=="WLEX","daily_steps_steps_24hr_pre"], na.rm = TRUE)
-
-# SD
-sd(mirage_included[mirage_included$group == "WLEX",]$daily_steps_steps_24hr_post - 
-   mirage_included[mirage_included$group == "WLEX",]$daily_steps_steps_24hr_pre, na.rm = TRUE)
-
-#DIWL
-summary(mirage_included[mirage_included$group=="DIWL","daily_steps_steps_24hr_post"] - mirage_included[mirage_included$group=="DIWL","daily_steps_steps_24hr_pre"], na.rm = TRUE)
-
-# SD
-sd(mirage_included[mirage_included$group == "DIWL",]$daily_steps_steps_24hr_post - 
-   mirage_included[mirage_included$group == "DIWL",]$daily_steps_steps_24hr_pre, na.rm = TRUE)
-
-#HED
-summary(mirage_included[mirage_included$group=="HED","daily_steps_steps_24hr_post"] - mirage_included[mirage_included$group=="HED","daily_steps_steps_24hr_pre"], na.rm = TRUE)
-
-# SD
-sd(mirage_included[mirage_included$group == "HED",]$daily_steps_steps_24hr_post - 
-   mirage_included[mirage_included$group == "HED",]$daily_steps_steps_24hr_pre, na.rm = TRUE)
 ```
 
 # Analysis based on changes
@@ -3228,7 +3191,7 @@ for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "PC.PE"]) {
 }
 
 # Loop over each lipid class and make plots
-for (lipid_class in c("TAG")){ # unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) {
+for (lipid_class in unique_lipid_classes[!unique_lipid_classes == "Cer ratio"]) {
   print( paste0 ("Analysing lipid class: ", lipid_class, "..."))
   # Organize data
   correlation_df <- prepare_and_combine_data(
@@ -3652,7 +3615,7 @@ hm <- list()
 # Assuming 'matrices_rho$gr1' is your correlation matrix and 'matrices_p_adj_non$gr1' is your p-value matrix
 for (i in 1:length(lipids_groups)) {
   # Generate heatmap and store it in the list
-  hm[[i]] <- generate_heatmap(matrices_rho[[i]], matrices_p_adj_all[[i]], color_mapping, p_value_limits)
+  hm[[i]] <- generate_heatmap(matrices_rho[[i]], matrices_p_adj_non[[i]], color_mapping, p_value_limits)
 }
 
 # Define the path and name of your PDF file
@@ -4510,9 +4473,10 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
         lipidClass = as.character(lipidclass),
         lipidComposition = as.character(lipidcomposition),
         slope_results = NA_real_,
-        prepost_results = NA_real_,
-        slope_results.ci = NA_real_,
-        prepost_results.ci = NA_real_)
+        prepost_results = NA_real_
+        # slope_results.ci = NA_real_,
+        # prepost_results.ci = NA_real_
+    )
     
     results_list <- setNames(list(results_list), paste(lipidclass, lipidcomposition, sep = "_"))
     
@@ -4540,12 +4504,14 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
       # Estimated marginal of means to get out slope and between groups statistics
       emm <- emmeans(model, ~ time * group)
 
+      
       # Contrasts for differences in slopes between groups
       model.slope.contrasts <- contrast(emm, method = "revpairwise", interaction = "pairwise", adjust = "none")
 
       model.slope.contrasts.results <- summary(model.slope.contrasts)
-      # Calculate confidence interval
-      ci_slopes <- confint(model.slope.contrasts)
+      
+      # # Calculate confidence interval
+      # ci_slopes <- confint(model.slope.contrasts)
       
       # Add the new 'contrast' column and remove the original "time_pairwise" and "group_pairwise" columns
       model.slope.contrasts.results <- model.slope.contrasts.results %>%
@@ -4555,7 +4521,7 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
       # Pre, Post between group comparisons
       prepost.contrasts <- pairs(emm, adjust = "none")
 
-      ci_prepost <- confint(prepost.contrasts)
+      # ci_prepost <- confint(prepost.contrasts)
       
       # Get results
       prepost.contrasts.results <- summary(prepost.contrasts)
@@ -4565,9 +4531,9 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
         lipidClass = as.character(lipidclass),
         lipidComposition = as.character(lipidcomposition),
         slope_results = model.slope.contrasts.results,
-        prepost_results = prepost.contrasts.results,
-        slope_results.ci = ci_slopes,
-        prepost_results.ci = ci_prepost
+        prepost_results = prepost.contrasts.results
+        # slope_results.ci = ci_slopes,
+        # prepost_results.ci = ci_prepost
         )
       
       # Name results list
@@ -4583,9 +4549,9 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
         lipidClass = as.character(lipidclass),
         lipidComposition = as.character(lipidcomposition),
         slope_results = NA_real_,
-        prepost_results = NA_real_,
-        slope_results.ci = NA_real_,
-        prepost_results.ci = NA_real_
+        prepost_results = NA_real_
+        # slope_results.ci = NA_real_,
+        # prepost_results.ci = NA_real_
         )
       
       results_list <- setNames(list(results_list), paste(lipidclass, lipidcomposition, sep = "_"))
@@ -4629,6 +4595,52 @@ result.lipid.pre_post.class.outlierRM <- map(lipid_classes, ~ mixedmodel_pre_pos
 
 result.lipid.pre_post.class <- flatten(result.lipid.pre_post.class)
 result.lipid.pre_post.class.outlierRM <- flatten(result.lipid.pre_post.class.outlierRM)
+```
+
+### Adjust factor for correct estimates and CI
+NB. not used and does not work!
+Codes tries to make a scaling factor to convert emmeans CI to a scale that would fit with the means.
+The current code tries to use a ratio between then group, time mean - the real mean - and the mean provided by the model and apply the factor to the CI. However, the resulting CI is precisely centered around the real mean, which suggests that this approach does not work.
+
+If we would like to get CI, the obvious option would be to run simple t-tests on the sums. This would work, but outliers would not be handled as well and id could not be a random factor.
+
+```{r}
+# Calculate the means for each groups at each time point
+class_means <- lipidomicsDF %>% 
+  group_by(id, lipidClass, time, group) %>%
+  summarize(id_sum = sum(pmol_mg, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  group_by(lipidClass, time, group) %>% 
+  summarize(mean_pmol_mg = mean(id_sum, na.rm = TRUE)) %>%
+  ungroup()
+  
+
+# Pivot wider to have 'Pre' and 'Post' means in separate columns
+class_means <- class_means %>%
+  pivot_wider(names_from = time, values_from = mean_pmol_mg, 
+              names_prefix = "time_")
+
+# Calculate the difference of means
+class_means <- class_means %>%
+  mutate(difference_of_mean = time_Post - time_Pre)
+
+class_means$difference_of_mean[class_means$lipidClass== "TAG" & class_means$group == "WLEX"]
+
+# View the final data frame
+print(class_means_final)
+
+
+# Make ratio between calculated mean and model mean from result.lipid.pre_post.class
+model_mean_diwl <- as.numeric(result.lipid.pre_post.class.outlierRM$TAG$prepost_results.ci[result.lipid.pre_post.class.outlierRM$TAG$prepost_results.ci$contrast =="Pre WLEX - Post WLEX", c("estimate")])
+
+model_real_ratio <- as.numeric( class_means[class_means$lipidClass == "TAG" & class_means$group == "WLEX", "difference_of_mean"] / model_mean_diwl)
+
+CI_diwl <- as.numeric(result.lipid.pre_post.class.outlierRM$TAG$prepost_results.ci[result.lipid.pre_post.class.outlierRM$TAG$prepost_results.ci$contrast =="Pre WLEX - Post WLEX", c("lower.CL", "upper.CL")])
+
+adjusted_CI <- model_real_ratio * CI_diwl / 1000
+
+print(adjusted_CI)
+# Make object with adjusted mean and CI
 ```
 
 ### QC: Diff p-values
@@ -4932,16 +4944,20 @@ View(est_and_p_pvals_lipid_class.outlierRM)
 ```
 
 
-
 ## Publication plots
 ### Figure 1
+ TO DO
+- Make plot store plot objects -> Combine into a single plot
 ```{r}
-plot_lipid_class <- function(lipidomicsDF, lipid_class, detection_limits, p_val_df, p_val_df.outlierRM, unit, save_subfolder) {
-  # Filter data based on lipid class and available time
+plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit, y.labels, save_subfolder) {
+
+  
+   # Filter data based on lipid class and available time
   filtered_data <- lipidomicsDF %>%
     filter(lipidClass == lipid_class & !is.na(time))
-  
-  
+# if(lipid_class == "GalCer"){
+#   browser()
+# }
 # MAKE SUM FOR EACH ID
 pmol_mg_class_sum <- filtered_data %>%
   group_by(lipidClass, group, id, time) %>%
@@ -4949,53 +4965,44 @@ pmol_mg_class_sum <- filtered_data %>%
     sum_pmol_mg = sum(pmol_mg_imp, na.rm = TRUE),
     sum_log_transformed = log(sum_pmol_mg + 1), #Add one to avoid 0 failure during transform
     .groups = "drop") %>% 
-  mutate(sum_pmol_mg = ifelse(lipidClass == "TAG", sum_pmol_mg/1000, sum_pmol_mg))
+  mutate(sum_pmol_mg = ifelse(lipidClass == "TAG" | lipidClass == "PE" | lipidClass == "PC", sum_pmol_mg/1000, sum_pmol_mg))
   
-  # Find correct p-values
-  search_key <- lipid_class
-  pvalues_to_annotate <- p_val_df[p_val_df[, 1] == search_key, ]
-  pvalues_to_annotate.outlierRM <- p_val_df.outlierRM[p_val_df.outlierRM[, 1] == search_key, ]
 
-  
-  
 mean_data_class <- pmol_mg_class_sum %>%
   group_by(group, time, lipidClass) %>%
   summarise(mean_class = mean(!!sym(unit), na.rm = TRUE), .groups = 'drop')
 
-# Get confidence intervals
-ci_slope_DIWL_WLEX <- result.lipid.pre_post.class.outlierRM[[lipid_class]]$slope_results.ci[result.lipid.pre_post.class.outlierRM[[lipid_class]]$slope_results.ci$group_pairwise =="DIWL - WLEX", c("lower.CL", "upper.CL")]
 
-ci_prepost_HED <- result.lipid.pre_post.class.outlierRM[[lipid_class]]$prepost_results.ci[result.lipid.pre_post.class.outlierRM[[lipid_class]]$prepost_results.ci$contrast =="Pre HED - Post HED", c("lower.CL", "upper.CL")]
+# Get p-values
+p_slope_DIWL_WLEX <- p_val_df[[lipid_class]]$slope_results[p_val_df[[lipid_class]]$slope_results$contrast =="Pre - Post : DIWL - WLEX", c("p.value")]
 
-ci_prepost_DIWL <- result.lipid.pre_post.class.outlierRM[[lipid_class]]$prepost_results.ci[result.lipid.pre_post.class.outlierRM[[lipid_class]]$prepost_results.ci$contrast =="Pre DIWL - Post DIWL", c("lower.CL", "upper.CL")]
+p_prepost_HED <- p_val_df[[lipid_class]]$prepost_results[p_val_df[[lipid_class]]$prepost_results$contrast =="Pre HED - Post HED", c("p.value")]
 
-ci_prepost_WLEX <-result.lipid.pre_post.class.outlierRM[[lipid_class]]$prepost_results.ci[result.lipid.pre_post.class.outlierRM[[lipid_class]]$prepost_results.ci$contrast =="Pre WLEX - Post WLEX", c("lower.CL", "upper.CL")]
+p_prepost_DIWL <- p_val_df[[lipid_class]]$prepost_results[p_val_df[[lipid_class]]$prepost_results$contrast =="Pre DIWL - Post DIWL", c("p.value")]
 
+p_prepost_WLEX <-p_val_df[[lipid_class]]$prepost_results[p_val_df[[lipid_class]]$prepost_results$contrast =="Pre WLEX - Post WLEX", c("p.value")]
 
-# Change with a factor 1000 as TAG is reported in mmol and no pmol
-if(lipid_class == "TAG"){
-  ci_slope_DIWL_WLEX <- ci_slope_DIWL_WLEX/1000
-  ci_prepost_HED <- ci_prepost_HED/1000
-  ci_prepost_DIWL <- ci_prepost_DIWL/1000
-  ci_prepost_WLEX <- ci_prepost_WLEX/1000
+# Custom function to format p-values
+format_p_value <- function(p_value, digits = 3, threshold = 0.001) {
+  if (p_value < threshold) {
+    return(paste0("P<", formatC(threshold, format = "f", digits = digits)))
+  } else {
+    return(paste0("P=", formatC(p_value, format = "f", digits = digits)))
+  }
 }
 
-  # Use switch to simplify the conditional checks
-  y_label <- switch(lipid_class,
-    "PC.PE" = "PE/PC ratio",
-    "TAG" = "Intramuscular triacylglycerole (mmol · mg⁻¹)",
-    "1,2-DG" = "1,2 diacylglycerol (pmol · mg⁻¹)",
-    switch(unit,
-      sum_pmol_mg = expression("Lipid concentration" ~ "(pmol ·" ~ mg^-1 * ")"),
-      sum_log_transformed = expression("Log transformed concentration"),
-      "Default Label"  # Fallback if none of the above
-    )
-  )
-  
+# Formatting p-values using the custom function
+p_slope_DIWL_WLEX <- format_p_value(p_slope_DIWL_WLEX)
+p_prepost_HED<- format_p_value(p_prepost_HED)
+p_prepost_DIWL <- format_p_value(p_prepost_DIWL)
+p_prepost_WLEX <- format_p_value(p_prepost_WLEX)
 
+
+  # Use switch to simplify the conditional checks
+  y_label <- y.labels
   
-  x_pos <- c(.02, .17, 0.3, 0.45, 0.62, 0.77)
-  y_lim <- c(0, 200)
+  x_pos <- c(.0, .12, .22, 0.34, 0.46, 0.58)
+  y_lim <- y_limit
   
 x_positions <- data.frame(
   combo = c("DIWL Pre", "DIWL Post", "WLEX Pre", "WLEX Post", "HED Pre", "HED Post"),
@@ -5008,28 +5015,30 @@ mean_data_class$x_pos <- x_positions$x_pos[match(interaction(mean_data_class$gro
 
 # Create the plot
 plot <- ggplot(pmol_mg_class_sum, aes(x = x_pos, y = !!sym(unit), group = interaction(id, group))) +
-  geom_line(aes(group = interaction(id, group)), color = "black", alpha = 0.9, linewidth = 0.1) +
-  geom_point(alpha = 0.5, size = 0.7) +
+  geom_line(aes(group = interaction(id, group)), color = "black", alpha = 0.9, linewidth = 0.05) +
+  geom_point(alpha = 0.3, size = 0.1) +
   geom_boxplot(aes(group = interaction(group, time)),
     width = 0.03, alpha = 0, outlier.shape = NA,
-    position = position_dodge(width = 0.25), color = "black"
+    position = position_dodge(width = 0.25), color = "black", linewidth = 0.25
   ) +
   geom_line(data = mean_data_class, aes(x = x_pos, y = mean_class, group = group), color = "black", linewidth = 1) +
   labs(y = y_label, x = "") +
   theme_minimal() +
   ylim(y_lim) +
-  theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 0, hjust = .5, vjust = 6),
+  theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = .9, vjust = 2.4, size = 6),
         legend.position = "right", legend.title = element_text(hjust = 0.5, size = 6),
-        legend.text = element_text(size = 6), panel.grid.major.x = element_blank(),
+        panel.grid.major.x = element_blank(), 
+        plot.margin = margin(t = 0, r = 5, b = 6, l = 2, unit = "pt"),
         panel.grid.minor.x = element_blank(), plot.title = element_text(hjust = 0.5)) +
-  scale_x_continuous(breaks = x_positions$x_pos, labels=c("DIWL\npre","DIWL\nPost","WLEX\npre","WLEX\nPost","HED\npre","HED\nPost"))
+        coord_cartesian(clip = "off") +
+  scale_x_continuous(breaks = x_positions$x_pos, labels=c("Pre","Post","Pre","Post","Pre","Post"))
 
 
 # add significance levels
-x_offset <- 0.01
-text_size <- 3
-y_pos_line_1 <- y_lim[2] * 0.85; y_pos_line_2 <- y_lim[2] * 0.925
-y_pos_text_1 <- y_lim[2] * 0.88; y_pos_text_2 <- y_lim[2] *0.955
+x_offset <- -0.01
+text_size <- 2.2
+y_pos_line_1 <- y_lim[2] * 0.88; y_pos_line_2 <- y_lim[2] * 0.94
+y_pos_text_1 <- y_lim[2] * 0.90; y_pos_text_2 <- y_lim[2] *0.96
 
 
 plot<- plot +
@@ -5038,63 +5047,177 @@ plot<- plot +
   geom_line(data=tibble(x = c(x_pos[5]+x_offset, x_pos[6]- x_offset)), y =c(y_pos_line_1, y_pos_line_1), aes(x=x, y=y), inherit.aes = FALSE) +
   geom_line(data=tibble(x = c((x_pos[2]-x_pos[1])/2+x_pos[1], (x_pos[4]-x_pos[3])/2+x_pos[3])), y =c(y_pos_line_2, y_pos_line_2), aes(x=x, y=y), inherit.aes = FALSE)+
   geom_text(data=tibble(x = c((x_pos[2]-x_pos[1])/2+x_pos[1])), y =c(y_pos_text_1), aes(x=x, y=y),
-            label="DIWL time", inherit.aes = FALSE, size = text_size) +
+            label= p_slope_DIWL_WLEX, inherit.aes = FALSE, size = text_size) +
 geom_text(data=tibble(x = c((x_pos[4]-x_pos[3])/2+x_pos[3])), y =c(y_pos_text_1), aes(x=x, y=y),
-          label="WLEX time", inherit.aes = FALSE,  size = text_size) + 
+          label=p_prepost_WLEX, inherit.aes = FALSE,  size = text_size) + 
   geom_text(data=tibble(x = c((x_pos[6]-x_pos[5])/2+x_pos[5])), y =c(y_pos_text_1), aes(x=x, y=y),
-            label="HED time", inherit.aes = FALSE, size = text_size) + 
+            label=p_prepost_HED, inherit.aes = FALSE, size = text_size) + 
   geom_text(data=tibble(x = c((x_pos[1]+x_pos[4]) /2)), y =c(y_pos_text_2), aes(x=x, y=y),
-            label="Time between", inherit.aes = FALSE, size = text_size)
+            label=p_prepost_DIWL, inherit.aes = FALSE, size = text_size)+
 
+  # Add lines and text for group labels
+  geom_text(data= tibble(x = c((x_pos[1]+x_pos[2])/2, (x_pos[3]+x_pos[4])/2, (x_pos[5]+x_pos[6])/2)), y =c(0), aes(x=x, y=y),
+            label=c("DIWL", "WLEX", "HED"), inherit.aes = FALSE, vjust  = 4.5, fontface="bold", size = 2.5)
   
+return(plot)
 
-# To do:
-
-# Put in 95% CI or P-values dynamically.
-    # Ready to get into figure!
-
-# Implement in loop
-
-# Inputs lipidclass, y-lim, p-value / CI; y-label
-
-
-
-
-# Print the plot
-print(plot)
-  # Define the filename and save the plot
-  filename <- paste0(
-    getwd() ,"/outputs/figures/figure 1/", save_subfolder, "/",
-    gsub(" ", "_", lipid_class), ".jpg"
-  )
-  ggsave(filename, plot = plot, device = "jpeg", width = 5, height = 6, dpi = 300)
-
-  cat("Plot saved as:", filename, "\n")
+# 
+# # Print the plot
+#   # Define the filename and save the plot
+#   filename <- paste0(
+#     getwd() ,"/outputs/figures/figure 1/", save_subfolder, "/",
+#     gsub(" ", "_", lipid_class), ".jpg"
+#   )
+#   ggsave(filename, plot = plot, device = "jpeg", width = 3, height = 4, dpi = 300)
+# 
+#   cat("Plot saved as:", filename, "\n")
+#   
 }
 
+# Make lipid class settings
+y.lims <- list("TAG" = c(0, 190),
+               "1,2-DG" = c(0, 2300),
+               "1,3-DG" = c(0, 1000),
+               "AC" = c(0, 500),
+               "Cer" = c(0, 150),
+               "dhCer" = c(0, 2.8),
+               "GalCer" = c(0, 60),
+               "GluCer" = c(0, 10),
+               "LacCer" = c(0, 90),
+               "LPC" = c(0, 300),
+               "LPE" = c(0, 200),
+               "LPG" = c(0, 2.5),
+               "LPI" = c(0, 180),
+               "LPS" = c(0, 70),
+               "PA" = c(0, 50),
+               "PC" = c(0, 17.5),
+               "PE" = c(0, 13.5),
+               "PG" = c(0, 200),
+               "PI" = c(0, 6000),
+               "PS" = c(0, 2000),
+               "SPH" = c(0, 5.5),
+               "SPM" = c(0, 2800),
+               "Cer ratio" = c(0, .65),
+               "PC.PE" = c(0, 4.5)
+               
+)
+
+y.labels <- list(
+  "TAG" = "Triacylglycerol (nmol · mg⁻¹)",
+  "1,2-DG" = "1,2 diacylglycerol (pmol · mg⁻¹)",
+  "1,3-DG" = "1,3 diacylglycerol (pmol · mg⁻¹)",
+  "AC" = "Acylcarnitine (nmol · mg⁻¹)",
+  "Cer" = "Ceramide (pmol · mg⁻¹)",
+  "dhCer" = "Dihydroceramide (pmol · mg⁻¹)",
+  "GalCer" = "Galactosylceramide (pmol · mg⁻¹)",
+  "GluCer" = "Glucosylceramide (pmol · mg⁻¹)",
+  "LacCer" = "Lactosylceramide (pmol · mg⁻¹)",
+  "LPC" = "Lysophosphatidylcholine (pmol · mg⁻¹)",
+  "LPE" = "Lysophosphatidylethanolamine (pmol · mg⁻¹)",
+  "LPG" = "Lysophosphatidylglycerol (pmol · mg⁻¹)",
+  "LPI" = "Lysophosphatidylinositol (pmol · mg⁻¹)",
+  "LPS" = "Lysophosphatidylserine (pmol · mg⁻¹)",
+  "PA" = "Phosphatidic acid (pmol · mg⁻¹)",
+  "PC" = "Phosphatidylcholine (nmol · mg⁻¹)",
+  "PE" = "Phosphatidylethanolamine (nmol · mg⁻¹)",
+  "PG" = "Phosphatidylglycerol (pmol · mg⁻¹)",
+  "PI" = "Phosphatidylinositol (pmol · mg⁻¹)",
+  "PS" = "Phosphatidylserine (pmol · mg⁻¹)",
+  "SPH" = "Sphingosine (pmol · mg⁻¹)",
+  "SPM" = "Sphingomyelin (pmol · mg⁻¹)",
+  "Cer ratio" = "Ceramide 16:0 / ceramide 24:0",
+  "PC.PE" = "Phophoethanolamine / phosphatidylcholine"
+)
+
+
 # Loop to call the plotting function for each lipid class
-unique_lipid_classes <- unique(lipidomicsDF$lipidClass[!lipidomicsDF$lipidClass == "Cer ratio"])
+unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
 
+# Copy to new results list
+results_to_plot <- result.lipid.pre_post.class.outlierRM
+# Add ceramide ratio
+results_to_plot$`Cer ratio` <- result.lipid.pre_post.class_comp.outlierRM$`Cer ratio_16:0 24:0`
 
+list_of_plots <- list()
 
-for (lipid_class in c("TAG")){  #unique_lipid_classes) {
-  plot_lipid_class(lipidomicsDF = lipidomicsDF,
+for (lipid_class in unique_lipid_classes) {
+  list_of_plots[[lipid_class]] <- plot_lipid_class(lipidomicsDF = lipidomicsDF,
                    lipid_class = lipid_class,
-                   detection_limits = detection_limits,
-                   p_val_df = est_and_p_pvals_lipid_class$p.vals,
-                   p_val_df.outlierRM = est_and_p_pvals_lipid_class.outlierRM$p.vals,
+                   p_val_df = results_to_plot,
+                   y_limit = y.lims[[lipid_class]],
+                   y.labels = y.labels [[lipid_class]],
                    unit = "sum_pmol_mg",
                    save_subfolder = "")
-                   
+}
+
+acylglycerole_row.1 <- list_of_plots[["TAG"]] | 
+             list_of_plots[["1,2-DG"]] | 
+             list_of_plots[["1,3-DG"]] | 
+             list_of_plots[["AC"]]
+
+Sphingolipids_row.1 <- list_of_plots[["Cer"]] | 
+              list_of_plots[["Cer ratio"]] |  
+              list_of_plots[["dhCer"]]  
+              #list_of_plots[["GalCer"]] | 
+Sphingolipids_row.2 <-
+                list_of_plots[["GluCer"]] | 
+              list_of_plots[["LacCer"]] |
+  list_of_plots[["SPH"]] |
+list_of_plots[["SPM"]] 
+
+
+phospholipid_row.1 <-
+  list_of_plots[["PC"]] | 
+  list_of_plots[["PE"]] | 
+  list_of_plots[["PC.PE"]]
+
+phospholipid_row.2 <-
+  list_of_plots[["PA"]] | 
+  list_of_plots[["PG"]] | 
+  list_of_plots[["PS"]] |
+  list_of_plots[["PI"]] 
   
+
+lysophospholipids_row.1 <-
+  list_of_plots[["LPC"]] | 
+  list_of_plots[["LPE"]] | 
+  list_of_plots[["LPG"]] | 
+  list_of_plots[["LPI"]] | 
+  list_of_plots[["LPS"]]
+
+             
+          
+plot_layout_1 <-  acylglycerole_row.1 +
+  plot_layout(guides = 'collect')
+filename <- paste0( getwd() ,"/outputs/figures/figure 1/", "tag_ac.jpg")
+ggsave(filename, plot = plot_layout_1, device = "jpeg", width = 9, height = 4, dpi = 300)
+
+plot_layout_2 <- Sphingolipids_row.1 / Sphingolipids_row.2 +
+  plot_annotation(tag_levels = 'A')
+filename <- paste0( getwd() ,"/outputs/figures/figure 1/", "sphingolipids.jpg")
+ggsave(filename, plot = plot_layout_2, device = "jpeg", width = 9, height = 8, dpi = 300)
+
+plot_layout_3 <- phospholipid_row.1 / phospholipid_row.2 +
+  plot_annotation(tag_levels = 'A')
+filename <- paste0( getwd() ,"/outputs/figures/figure 1/", "phospholipids.jpg")
+ggsave(filename, plot = plot_layout_3, device = "jpeg", width = 9, height = 8, dpi = 300)
+
+plot_layout_4 <- lysophospholipids_row.1 +
+  plot_annotation(tag_levels = 'A')
+filename <- paste0( getwd() ,"/outputs/figures/figure 1/", "lysophospholipids.jpg")
+ggsave(filename, plot = plot_layout_4, device = "jpeg", width = 9, height = 4, dpi = 300)
+
+
+
+  
+
  # plot_lipid_class(lipidomicsDF = lipidomicsDF,
  #                  lipid_class = lipid_class,
  #                  detection_limits = detection_limits,
  #                  p_val_df = est_and_p_lipid_class_and_comp$p.vals,
  #                  unit = "sum_log_transformed",
  #                  save_subfolder = "log_transformed")   
-  
-}
+
 
 
 ```
@@ -5372,7 +5495,7 @@ plot <- ggplot(pmol_mg_class_sum, aes(
 # Loop to call the plotting function for each lipid class
 unique_lipid_classes <- unique(lipidomicsDF$lipidClass[!lipidomicsDF$lipidClass == "Cer ratio"])
 
-for (lipid_class in unique_lipid_classes) {
+for (lipid_class in  unique_lipid_classes) {
   plot_lipid_class(lipidomicsDF = lipidomicsDF,
                    lipid_class = lipid_class,
                    detection_limits = detection_limits,
