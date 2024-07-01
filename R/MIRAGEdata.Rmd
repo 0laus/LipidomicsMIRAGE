@@ -52,7 +52,7 @@ LLOQ_discard_factor <- 2
 outlier_remove <- FALSE
 ```
 
-# Load and prepare data
+vgn# Load and prepare data
 
 ## Lipidomics data
 
@@ -195,20 +195,12 @@ limitFunction <- function(lipidomicsDF, detection_limits){
 lipidomicsDF <- limitFunction(lipidomicsDF, detection_limits)
 ```
 
-### Normalization and transformation
+### Weight normalization
 
 **Weight normalization**
 
 ```{r}
 lipidomicsDF$pmol_mg <- lipidomicsDF$pmol / lipidomicsDF$equiv_weight_extracted
-```
-
-**Log transform** Log transform the weight normalized lipidomics data. 1 is added to all values to avoid zores
-
-```{r}
-# Transform and add a small constant (+1) to avoid log(0)
-lipidomicsDF <- lipidomicsDF %>%
-  mutate(pmol_mg_log = log(pmol_mg + 1))
 ```
 
 ### Outlier handling
@@ -574,6 +566,15 @@ unique_combinations <- lipidomicsDF %>%
 unique_lipid_classes <- unique(lipidomicsDF$lipidClass)
 ```
 
+### Log transform
+**Log transform** Log transform the weight normalized lipidomics data. 0.00001 is added to all values to avoid zores
+
+```{r}
+# Transform and add a small constant (+1) to avoid log(0)
+lipidomicsDF <- lipidomicsDF %>%
+  mutate(pmol_mg_log = log(pmol_mg + 0.00001))
+```
+
 ## Mirage data
 
 **Load from "FINAL MIRAGE DATASET.xlsx"**
@@ -696,24 +697,24 @@ glycemicControl <- list(
 )
 
 mitochondria <- list(
-  c("at_pmax_p_mrs_pre", "at_pmax_p_mrs_post", "ATP max (?)"),
+  #c("at_pmax_p_mrs_pre", "at_pmax_p_mrs_post", "ATP max (?)"),
   c("pcr_p_mrs_pre", "pcr_p_mrs_post", "PCR recovery? (?)"),
-  c("max_oxphos_pre", "max_oxphos_post", "Max oxidative phosphorylation (?)"),
-  c("max_ets_pre", "max_ets_post", "Max ETS? (?)"),
-  c("le_pre", "le_post", "Leak? (?)"),
-  c("pe_pre", "pe_post", "PE? (?)")
+  c("max_oxphos_pre", "max_oxphos_post", "Max oxidative phosphorylation (?)")
+  #c("max_ets_pre", "max_ets_post", "Max ETS? (?)"),
+  #c("le_pre", "le_post", "Leak? (?)"),
+  # c("pe_pre", "pe_post", "PE? (?)")
 )
 
 bodycomposition <- list( # SHOULD FFM ETC. WEIGHTs BE NORMALISED TO TOTAL WEIGHT?
   c("weight_pre", "weight_post", "Body mass (kg)" ),
-  c("leg_lean_mass_pre", "leg_lean_mass_post", "Leg lean mass (kg?)" ),
+  #c("leg_lean_mass_pre", "leg_lean_mass_post", "Leg lean mass (kg?)" ),
   c("fat_mass_dxa_pre", "fat_mass_dxa_post", "Fat mass (kg?)"),
   c("lean_mass_dxa_pre", "lean_mass_dxa_post", "Lean body mass (kg?)"),
-  c("ffm_dxa_pre", "ffm_dxa_post", "Fat free mass (kg?)"),
+  #c("ffm_dxa_pre", "ffm_dxa_post", "Fat free mass (kg?)"),
   #c("thigh_sat_g_pre", "thigh_sat_g_post", "Thigh SAT, (g)"),
-  c("thigh_imat_g_pre", "thigh_imat_g_post", "Thigh IMAT (g)"),
-  c("percent_imat_pre", "percent_imat_post", "Thigh IMAT fraction (%)"),
-  c("thigh_muscle_g_pre", "thigh_muscle_g_post", "Thigh muscle (g)")
+  #c("thigh_imat_g_pre", "thigh_imat_g_post", "Thigh IMAT (g)"),
+  c("percent_imat_pre", "percent_imat_post", "Thigh IMAT fraction (%)")
+  #c("thigh_muscle_g_pre", "thigh_muscle_g_post", "Thigh muscle (g)")
   #c("abdomen_vat_g_pre", "abdomen_vat_g_post", "Adbominal VAT (g)"),
   #c("type_iia_iix_pre", "type_iia_iix_post", "Fibertype? (?)")
 )
@@ -732,9 +733,9 @@ physicalActivity <- list(
   c("tdpa_pre", "tdpa_post", "Time per day (min / day)"),
   #c("vo2abs_pre", "vo2abs_post", "Oxygen uptake (l / min)"),
   c("vo2kg_ffm_pre", "vo2kg_ffm_post", "Oxygen~uptake~(l %.% min^{-1} %.% kgFFM^{-1})"),
-  c("x4m_walk_pre", "x4m_walk_post", "Time? (s)"),
+  #c("x4m_walk_pre", "x4m_walk_post", "Time? (s)"),
   #c("step_test_pre", "step_test_post", "Steps? (?)"),
-  c("x1rm_pre", "x1rm_post", "Stength (?)"),
+  #c("x1rm_pre", "x1rm_post", "Stength (?)"),
   #c("peak_torque120_pre", "peak_torque120_post", "Torque (Nm?)"),
   c("age_pre", "age_post", "Age (years)")
 )
@@ -742,7 +743,7 @@ physicalActivity <- list(
 
 mirage_ch_vars <- list(
   glycemicControl = glycemicControl,
-  #mitochondria = mitochondria,
+  mitochondria = mitochondria,
   bodycomposition = bodycomposition,
   #blood = blood,
   physicalActivity = physicalActivity
@@ -753,20 +754,21 @@ mirage_ch_vars <- list(
 
 **Cross-sectional variables** Define variables of interest to compare between all individuals at pre
 
+Post values are added to also make correlations on the post part of things.
 ```{r}
 # Glycemic Control
-glycemicControl <- c("rd_ss2kg_ffm_insulin_pre", "hgb_a1c_pre")
+glycemicControl <- c("rd_ss2kg_ffm_insulin_pre", "hgb_a1c_pre", "rd_ss2kg_ffm_insulin_post", "hgb_a1c_post")
 
 # Mitochondria
-mitochondria <- c("pcr_p_mrs_pre", "max_oxphos_pre")
+mitochondria <- c("pcr_p_mrs_pre", "max_oxphos_pre", "pcr_p_mrs_post", "max_oxphos_post")
 
-bodycomposition <- c("percent_imat_pre")
+bodycomposition <- c("bmi_pre", "percent_imat_pre", "bmi_post", "percent_imat_post")
 
 # Blood
 blood <- c("vldl_pre", "ldl_pre", "hdl_pre", "cholesterol_pre", "triglycerides_pre", "plasma_ffabg_pre")
 
 # Physical activity + Age
-physicalActivity <- c("tdpa_pre", "vo2kg_ffm_pre", "age_pre")#, "vo2abs_pre", "vo2kg_ffm_pre", "age_pre")
+physicalActivity <- c("tdpa_pre", "vo2kg_ffm_pre", "age_pre", "tdpa_post", "vo2kg_ffm_post") #, "vo2abs_pre", "vo2kg_ffm_pre", "age_pre")
 
 
 # Combining all the "_pre" variables into a single list for mirage_crossSectional_vars, excluding "age_pre" from all but the physicalActivity list
@@ -2703,50 +2705,95 @@ print(plot)
 ####### Function to calculate p-values #########
 pvalue <- function(x, name) {
   # Construct vectors of data y, and groups (strata) g
-  
   y <- unlist(x)
   g <- factor(rep(1:length(x), times=sapply(x, length)))
   # Convert numeric levels in g to character labels
   levels(g) <- levels(mirage_included$group)
   
-  # Create a new data frame
-  data <- data.frame(y = y, g = g)
+  ### OLD CODE
+  # # Create a new data frame
+  # data <- data.frame(y = y, g = g)
+  # 
+  # # Remove NA values for accurate t-test computation
+  # data_clean <- na.omit(data)
   
-  # Remove NA values for accurate t-test computation
-  data_clean <- na.omit(data)
+  # ## Subset data to include only DIWL and WLEX groups
+  # data_subset <- subset(data_clean, g %in% c("DIWL", "WLEX"))
+  ###
   
-  # Subset data to include only DIWL and WLEX groups
-  data_subset <- subset(data_clean, g %in% c("DIWL", "WLEX"))
+  # make _post name of current variable
+    name_post <- sub("_pre$", "_post", name)
   
-  if (is.numeric(y)) {  
-    # Perform t-test on the subset
-    p <- t.test(y ~ g, data = data_subset)$p.value
-    ci <- t.test (y ~ g, data = data_subset)$conf.int
-    
-    # Calculate P-value on change
-    # make _change name to get that col
+    # make _change variable name
     name_change <- sub("_pre$", "_change", name)
     
-    # Filter and create the new data frame
-    p_change_subset <- mirage_included %>%
-      filter(group %in% c("DIWL", "WLEX")) %>%
-      select(g = group, y = !!sym(name_change))  # renaming columns in the select statement
+    # Make a dataframe with relevant columns
+    data <- mirage_included[c("id", "group", name, name_post)]
     
+  if (is.numeric(y)) {  
+   ### Old code
+    # # Perform t-test on the subset
+   #  p <- t.test(y ~ g, data = data_subset)$p.value
+   #  ci <- t.test (y ~ g, data = data_subset)$conf.int
     
-    p_change <- t.test (y ~ g, data = p_change_subset)$p.value
-    ci_change <- t.test (y ~ g, data = p_change_subset)$conf.int
+    # # Calculate P-value on change
+    # 
+    # # Filter and create the new data frame
+    # p_change_subset <- mirage_included %>%
+    #   filter(group %in% c("DIWL", "WLEX")) %>%
+    #   select(g = group, y = !!sym(name_change))  # renaming columns in the select statement
+    # 
+    # 
+    # p_change <- t.test (y ~ g, data = p_change_subset)$p.value
+    # ci_change <- t.test (y ~ g, data = p_change_subset)$conf.int
+    # 
+    # ci_vals <- c(sprintf("[%0.2f, %0.2f]", ci[1], ci[2]),
+    #              sprintf("[%0.2f, %0.2f]", ci_change[1], ci_change[2])
+    # )
     
-    ci_vals <- c(sprintf("[%0.2f, %0.2f]", ci[1], ci[2]),
-                 sprintf("[%0.2f, %0.2f]", ci_change[1], ci_change[2])
-    )
+       # Make dataframe into long format
+    data_long <- data %>%
+      pivot_longer(
+        cols = contains(c("pre", "post")),  # Select columns that contain "pre" or "post"
+        names_to = "time",                  # Create a new column "time" for the names
+        values_to = "value"                 # Create a new column "value" for the values
+      )    %>% 
+      mutate(
+        time = ifelse(grepl("pre", time), "Pre", "Post")  # Simplify the time values to "Pre" or "Post"
+      )
     
+    ###
+    # Ensure cols are factors
+    data_long$group <- factor(data_long$group, levels = c("HED", "DIWL", "WLEX"))
+    data_long$time <- factor(data_long$time, levels = c("Pre", "Post"))
     
+    # Run mixed model
+    model <- lmer(value ~ time * group +
+           (1 | id),
+         data = data_long)
+
+    emm <- emmeans(model, ~ time * group)
+    
+    model.slope.contrasts <- contrast(emm, method = "revpairwise", interaction = "pairwise", adjust = "none")
+    model.slope.contrasts.results <- summary(model.slope.contrasts)
+  
+    prepost.contrasts <- pairs(emm, adjust = "none")
+    prepost.contrasts.results <- summary(prepost.contrasts)
+    
+    # Baseline P-value between groups
+    p <- prepost.contrasts.results$p.value[prepost.contrasts.results$contrast == "Pre DIWL - Pre WLEX"]
+    # Baseline P-value between groups
+    p_change <- model.slope.contrasts.results$p.value[model.slope.contrasts.results$group_pairwise == "DIWL - WLEX"]
+      
+      
     if (name_change == "age_change"){
       p_vals <- c(sub("<", "&lt;", format.pval(p, digits=2, eps=0.001)),
-                  sub("<", "&lt;", format.pval(p_change, digits=2, eps=0.001)))
+                      paste0("<i>", sub("<", "&lt;", format.pval(p_change, digits = 2, eps = 0.001)), "</i>")
+  )
     } else {
       p_vals <- c(sub("<", "&lt;", format.pval(p, digits=2, eps=0.001)),
-                  sub("<", "&lt;", format.pval(p_change, digits=2, eps=0.001)))
+                    paste0("<i>", sub("<", "&lt;", format.pval(p_change, digits = 2, eps = 0.001)), "</i>")
+  )
     }
     
     return(p_vals)
@@ -2842,7 +2889,7 @@ units(mirage_included$triglycerides_pre) <- "mmol/l"
 
 
 # Footnote
-footnote <-paste0 ("ᵃ Daily physical activity > 1.5 MET <br/>", # <br/> used as it's a html table
+footnote <-paste0 ("ᵃ Minutes of daily physical activity above 1.5 metabolic equavalent of task (MET)<br/>", # <br/> used as it's a html table
                    "ᵇ Intramuscular adipose tissue<br/>",
                    "ᶜ Glucose infusion rate normalized to fat-free mass and blood insulin")
 
@@ -2870,8 +2917,66 @@ custom_render <- function(x, name, ...) {
       }
     }
     
-    # make _change name to get that col
+  # make _post name of current variable
+    name_post <- sub("_pre$", "_post", name)
+  
+    # make _change variable name
     name_change <- sub("_pre$", "_change", name)
+    
+    # Make a dataframe with relevant columns
+    data <- mirage_included[c("id", "group", name, name_post)]
+    
+    
+    ### Run mixed model to get p-values for symbols
+         # Make dataframe into long format
+    data_long <- data %>%
+      pivot_longer(
+        cols = contains(c("pre", "post")),  # Select columns that contain "pre" or "post"
+        names_to = "time",                  # Create a new column "time" for the names
+        values_to = "value"                 # Create a new column "value" for the values
+      )    %>% 
+      mutate(
+        time = ifelse(grepl("pre", time), "Pre", "Post")  # Simplify the time values to "Pre" or "Post"
+      )
+    
+    ###
+    # Ensure cols are factors
+    data_long$group <- factor(data_long$group, levels = c("HED", "DIWL", "WLEX"))
+    data_long$time <- factor(data_long$time, levels = c("Pre", "Post"))
+    
+    # Run mixed model
+    model <- lmer(value ~ time * group +
+           (1 | id),
+         data = data_long)
+
+    emm <- emmeans(model, ~ time * group)
+    
+    model.slope.contrasts <- contrast(emm, method = "revpairwise", interaction = "pairwise", adjust = "none")
+    model.slope.contrasts.results <- summary(model.slope.contrasts)
+  
+    prepost.contrasts <- pairs(emm, adjust = "none")
+    prepost.contrasts.results <- summary(prepost.contrasts)
+    
+    ###
+    
+    
+    
+    if (current_group == "DIWL"){
+      p <- prepost.contrasts.results$p.value[prepost.contrasts.results$contrast == "Pre DIWL - Post DIWL"]
+      p_hed_pre <- prepost.contrasts.results$p.value[prepost.contrasts.results$contrast == "Pre HED - Pre DIWL"]
+      p_hed_ch <- model.slope.contrasts.results$p.value[model.slope.contrasts.results$group_pairwise == "HED - DIWL"]
+    } else if (current_group == "WLEX") {
+      p <- prepost.contrasts.results$p.value[prepost.contrasts.results$contrast == "Pre WLEX - Post WLEX"]
+      p_hed_ch <- model.slope.contrasts.results$p.value[model.slope.contrasts.results$group_pairwise == "HED - WLEX"]
+      p_hed_pre <- prepost.contrasts.results$p.value[prepost.contrasts.results$contrast == "Pre HED - Pre WLEX"]
+  } else if (current_group == "HED") {
+      p <- prepost.contrasts.results$p.value[prepost.contrasts.results$contrast == "Pre HED - Post HED"]
+      p_hed_pre <- NA
+      p_hed_ch <- NA
+  }else{
+    p <- NULL; p_hed_ch <- NULL
+        }
+      
     
     # Calculate stats for baseline
     stats_pre <- stats.default(x)
@@ -2888,8 +2993,7 @@ custom_render <- function(x, name, ...) {
     mean_sd_change <- with(stats.apply.rounding(stats_change, digits = 2),
                            sprintf("<i>%s (%s)", MEAN, SD))
     
-    
-    
+        
     # Don't calculate stat changes for age
     if (name == "age_pre" | name == "bmi_pre"){
       summary_stat <- c("Baseline" = mean_sd_pre)
@@ -2901,7 +3005,16 @@ custom_render <- function(x, name, ...) {
     # Rename "Mean (SD)2" to "Mean (SD) and add unit "
     names(summary_stat)[names(summary_stat) == "Baseline2"] <- paste0("baseline") # add to paste to add units: units(mirage_included[[name]])
     
+    if (!is.na(p_hed_pre) && p_hed_pre < 0.05) {
+      summary_stat[["Baseline"]] <- paste0 (summary_stat[["Baseline"]], "*") }
     
+    if ("<i>%-change" %in% names(summary_stat) && !is.na(p_hed_ch) && p_hed_ch < 0.05) {
+      summary_stat[["<i>%-change"]] <- paste0 (summary_stat[["<i>%-change"]], "*") }
+    
+    
+    if ("<i>%-change" %in% names(summary_stat) && !is.na(p) && p < 0.05) {
+  summary_stat[["<i>%-change"]] <- paste0("<b>", summary_stat[["<i>%-change"]], "</b>")
+}
     
     # Handling for categorical data
   } else if (is.factor(x)) {
@@ -2923,10 +3036,10 @@ custom_render <- function(x, name, ...) {
 
 
 # Generate the table with custom rendering for weight
-result_table <- table1(~ + age_pre + sex_0_male_1_female  + t2d_status  + 
+result_table <- table1(~ + age_pre + sex_0_male_1_female  + t2d_status + rd_ss2kg_ffm_insulin_pre + hgb_a1c_pre + 
                          bmi_pre + weight_pre + 
-                         fat_mass_dxa_pre + lean_mass_dxa_pre + thigh_muscle_g_pre + percent_imat_pre + rd_ss2kg_ffm_insulin_pre + vo2kg_ffm_pre + tdpa_pre +
-                         + hgb_a1c_pre + triglycerides_pre + cholesterol_pre + ldl_pre + hdl_pre | group,
+                         fat_mass_dxa_pre + lean_mass_dxa_pre + percent_imat_pre  + vo2kg_ffm_pre + tdpa_pre +
+                          + triglycerides_pre + cholesterol_pre + ldl_pre + hdl_pre | group,
                        data = mirage_included,
                        render = custom_render,
                        footnote = footnote,
@@ -3403,7 +3516,7 @@ for (lipid_class in unique_lipid_classes) { # [!unique_lipid_classes == "Cer rat
 
 ```
 
-# ! Waterfall: Classes
+# ! Waterfall
 ```{r}
 correlation_waterfall <- function(clinical_var){
 
@@ -3429,6 +3542,7 @@ get_significance <- function(p_value) {
     return("")
   }
 }
+
 corr_ordered$significance <- sapply(corr_ordered$spearman_p_all, get_significance)
 # Define your color mapping function
 color_mapping_common <- colorRamp2(c(-1, 0, 1), c("blue", "white", "red"))
@@ -3444,7 +3558,7 @@ corr_ordered$color <- color_mapping_common(corr_ordered$spearman_rho_all)
 
 plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
    geom_col(aes(fill = color), 
-            color = "black", size = 1) +
+            color = "black", linewidth = 1) +
   #geom_col(aes(fill = ifelse(significance == "", "grey", ifelse(spearman_rho_all > 0, "positive", "negative"))),
    #        color = "black", size = 1) +
   geom_text(aes(label = significance,
@@ -3456,7 +3570,7 @@ plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
   labs(x = "Predictor Variable", y = expression("Spearman's " * rho), title = clinical_var[[2]]) +
    scale_fill_identity() + 
    #scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits = c(-1, 1), guide = "none") +
-  geom_hline(yintercept = 0, color = "black", size = 1) +
+  geom_hline(yintercept = 0, color = "black", linewidth = 1) +
   #scale_fill_manual(values = c(positive = "#FFB3B3", negative = "#B3C7E6", grey = "grey"), guide = "none") +
   ylim(-as.numeric(clinical_var[3]), as.numeric(clinical_var[[3]])) +
   theme(panel.background = element_rect("transparent"),
@@ -3466,17 +3580,18 @@ plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
         axis.text.y = element_text(size = 7),
         axis.title.x = element_text(size = 7, color = "black"),
         axis.text.x = element_text(size = 7),
-        axis.line = element_line(size = 1),
+        axis.line = element_line(linewidth = 1),
         plot.title = element_text(hjust = .5, face = "bold", size = 8))
     
 
-ggsave(paste0(getwd(), "/outputs/figures/baseline correlations/waterfall/", clinical_var[[1]], ".svg"), plot, device = "pdf", height = 80, width = 55 , units = "mm", bg = "transparent")
+ggsave(paste0(getwd(), "/outputs/figures/change correlations/waterfall/", clinical_var[[1]], ".svg"), plot, device = "pdf", height = 80, width = 55 , units = "mm", bg = "transparent")
 
 print(plot)
 }
 
 # Define clinical var c(var_name, plot_title, x-lim)
 clinical_var <- list(
+  c("weight_ch", bquote(bold("Body weight")), .7),
   c("tdpa_ch", bquote(bold("Total daily physical activity")), .7),
   c("rd_ss2kg_ffm_insulin_ch", bquote(bold("Glucose infusion rate")), .7),
   c("percent_imat_ch", bquote(bold("Thigh IMAT proportion")), .7),
@@ -3499,6 +3614,7 @@ for (var in clinical_var){
   
    # Create new columns 'lipidClass' and 'lipidComposition' using base R
 res_lipid_names <- correlation_values_ch_composition %>%
+  filter(!is.na(spearman_rho_all)) %>%  # Remove rows where spearman_corr_all is NA
   mutate(
     lipidClass = sapply(strsplit(as.character(lipid), " "), `[`, 1),
     lipidComposition = sapply(strsplit(as.character(lipid), " "), `[`, 2)
@@ -3541,7 +3657,7 @@ ht_opt$ROW_ANNO_PADDING <- unit(0, "mm")
           
           
           heatmap_legend_param = list(
-            title = "Percent",   # Legend title
+            title = bquote(bold("Spearman's"~rho)),   # Legend title
             direction = "vertical",  # Set legend labels vertically
             title_gp = gpar(fontsize = 6, fontface = "bold"),   # Adjust title font size
             labels_gp = gpar(fontsize = 5),  # Adjust label font size
@@ -3560,7 +3676,7 @@ ht_opt$ROW_ANNO_PADDING <- unit(0, "mm")
           
          cell_fun = function(j, i, x, y, width, height, fill) {
                 
-               if (is.na(hm_matrix[i, j])) {
+if (is.na(hm_matrix[i, j])) {
   grid.rect(unit(x, "npc"), unit(y, "npc"), width, height, gp = gpar(fill = "grey", col = NA))
 } else if (!is.na(p_val_matrix[i, j])) {
   if (p_val_matrix[i, j] < pLims$p1) {
@@ -3573,27 +3689,26 @@ ht_opt$ROW_ANNO_PADDING <- unit(0, "mm")
             }
           })
    
-   savelocation_svg <- paste0(getwd(), "/outputs/figures/waterfall/heatmaps/", clin_var[[1]], "/", lipids_groups[[i]][2], ".svg")
+   savelocation_svg <- paste0(getwd(), "/outputs/figures/change correlations/waterfall/heatmaps/", clin_var[[1]], "/", lipids_groups[[i]][2], ".svg")
    dir.create(dirname(savelocation_svg), recursive = TRUE, showWarnings = FALSE)
-   
-   
    
    height <- as.double(lipids_groups[[i]][3])
    width <- as.double(lipids_groups[[i]][4])
    
    pdf(savelocation_svg, width = width, height = height) # dimensions in inches
    
+   # Set the background to transparent
+   
    draw(hm,
         heatmap_legend_side = "right", 
         annotation_legend_side = "right",
+        background = "transparent"
    )
    
    # Close the device
    dev.off()
    
  }
-
-
 
 # Define color map for heatmap
 color_mapping_common <- colorRamp2(c(-1, 0, 1), c("blue", "white", "red"))
@@ -3603,24 +3718,24 @@ p_value_limits <- list(p1 = 0.001, p2 = 0.01, p3 = 0.05)
 
 
 lipids_groups <- list(
-  gr_tag_ac = c("TAG", "Triacylglycerol", 0.65, 2.5, FALSE, "row_title"),
-  gr_1_2_dg = c("1,2-DG", "1,2-diacylglycerol", 0.82, 2.9, FALSE, "row_title"),
-  gr_1_3_dg = c("1,3-DG", "1,3-diacylglycerol", 0.82, 2.9, FALSE, "row_title"),
-  gr_ac = c("AC", "Acylcarnitine", 0.65, 1.1, FALSE, "row_title"),
-  gr_cer = c("Cer", "Ceramide", 0.65, .6, FALSE, "row_title"),
+  gr_tag_ac = c("TAG", "Triacylglycerol", 0.65, 2.3, FALSE, "row_title"),
+  gr_1_2_dg = c("1,2-DG", "1,2-diacylglycerol", 0.82, 2.4, FALSE, "row_title"),
+  gr_1_3_dg = c("1,3-DG", "1,3-diacylglycerol", 0.82, 1.7, FALSE, "row_title"),
+  gr_ac = c("AC", "Acylcarnitine", 0.67, 1.1, FALSE, "row_title"),
+  gr_cer = c("Cer", "Ceramide", 0.65, .8, FALSE, "row_title"),
   gr_dhcer = c("dhCer", "Dihydroceramide", 0.65, .69, FALSE, "row_title"),
   gr_glucer = c("GluCer", "Glucosylceramide", 0.65, .73, FALSE, "row_title"),
   gr_laccer = c("LacCer", "Lactosylceramide", 0.65, .72, FALSE, "row_title"),
   gr_sph = c("SPH", "Sphingosine", 0.65, 1.5, FALSE, "row_title"),
-  gr_spm = c("SPM", "Sphingomyelin", 0.65, .7, FALSE, "row_title"),
+  gr_spm = c("SPM", "Sphingomyelin", 0.65, .9, FALSE, "row_title"),
   gr_pc = c("PC", "Phosphatidylcholine", 0.85, 5.4, FALSE, "row_title"),
   gr_pe = c("PE", "Phosphatidylethanolamine", 0.85, 5.4, FALSE, "row_title"),
   gr_pc_pe = c("PC.PE", "Phosphatidylcholine.Phosphatidylethanolamine", 0.85, 5, FALSE, "row_title"),
   gr_pa = c("PA", "Phosphatidic acid", 0.82, 2.3, FALSE, "row_title"),
-  gr_pg = c("PG", "Phosphatidylglycerol", 0.82, 2.5, FALSE, "row_title"),
+  gr_pg = c("PG", "Phosphatidylglycerol", 0.82, 1.5, FALSE, "row_title"),
   gr_ps = c("PS", "Phosphatidylserine", 0.82, 2.3, FALSE, "row_title"),
   gr_pi = c("PI", "Phosphatidylinositol", 0.82, 2.3, FALSE, "row_title"),
-  gr_lpc = c("LPC", "Lysophosphatidylcholine", 0.65, 1.2, FALSE, "col_title"),
+  gr_lpc = c("LPC", "Lysophosphatidylcholine", 0.65, 1.1, FALSE, "col_title"),
   gr_lpe = c("LPE", "Lysophosphatidylethanolamine", 0.65, 1.25, FALSE, "col_title"),
   gr_lpg = c("LPG", "Lysophosphatidylglycerol", 0.65, 1.05, FALSE, "col_title"),
   gr_lpi = c("LPI", "Lysophosphatidylinositol", 0.65, 1, FALSE, "col_title"),
@@ -3628,10 +3743,9 @@ lipids_groups <- list(
 )
 
 
-
-
 # Define clinical var c(var_name, plot_title, x-lim)
 clinical_var <- list(
+  c("weight_ch", bquote("Body weight"), .7),
   c("tdpa_ch", bquote("Total daily physical activity"), .7),
   c("rd_ss2kg_ffm_insulin_ch", bquote("Glucose infusion rate"), .7),
   c("percent_imat_ch", bquote("Thigh IMAT proportion"), .7),
@@ -3698,7 +3812,7 @@ for (j in 1:length(selected_clinical)) {
     
     
     # Make TAG, PE and PG nmol instead of pmol
-if (plot_lipids[i] %in% c("TAG", "PE", "PC", "PI")) {
+if (plot_lipids[i] %in% c("TAG", "1,2-DAG", "1,3-DAG", "PE", "PC", "PI")) {
   correlation_df$pmol_mg_ch_id <- correlation_df$pmol_mg_ch_id / 1000
   x_label <- bquote(Delta * " " * nmol %.% mg^{-1})
 }
@@ -3713,8 +3827,7 @@ if (plot_lipids[i] %in% c("TAG", "PE", "PC", "PI")) {
     # Create the plot with a black trendline
  plot <- ggplot(correlation_df, aes(x = pmol_mg_ch_id, y = !!sym(var_name_ch), shape = group, fill = gender)) +
       geom_point(size = 0.9, stroke = 0.5, color = "black") +
-      geom_smooth(aes(group = 1), method = "lm", se = TRUE, color = "black", alpha = 0.3, linewidth = 0.5) +
-  labs(
+       labs(
     x = x_label,
     y = if (i == 1) selected_clinical[[j]][[3]] else NULL,
     color = "Gender",
@@ -3752,6 +3865,14 @@ if (plot_lipids[i] %in% c("TAG", "PE", "PC", "PI")) {
            hjust = -.1, vjust = 1.1, size = 2, fontface = "plain", color = "black", check_overlap = T)
       }
     
+ # Add trendlines based on P-values
+  if (p_value < 0.05) {
+    plot <- plot + geom_smooth(aes(group = 1), method = "lm", se = TRUE, color = "black", alpha = 0.3, linewidth = 0.5)
+  } else if (p_value < 0.1) {
+    plot <- plot + geom_smooth(aes(group = 1), method = "lm", se = FALSE, color = "black", linewidth = 0.5, linetype = "dashed")
+  }
+ 
+ 
     
     # Add column titles only for the first row with adjusted size and bold
     if (j == 1) {
@@ -3805,22 +3926,32 @@ clinical_vars <- list(
   c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post", bquote(atop(NA, atop(textstyle(bold("Glucose infusion rate")), textstyle(Delta * " " * "mg ·(min·kgFFM·ins)"^{-1}))))),
   c("hgb_a1c_pre", "hgb_a1c_post", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle(Delta * " " * "%"))))),
   c("vo2kg_ffm_pre", "vo2kg_ffm_post", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle(Delta * " " * "ml · kgFFM"^{-1}))))),
-  c("tdpa_pre", "tdpa_post", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle(Delta * " " * ( "min · day"^{-1}))))),
-  c("percent_imat_pre", "percent_imat_post", bquote(atop(NA, atop(textstyle(bold(Thigh IMAT)), textstyle(Delta * " " * "%")))))
+  c("tdpa_pre", "tdpa_post", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle(Delta * " " * ( "min · day"^{-1})))))),
+  c("weight_pre", "weight_post", bquote(atop(NA, atop(textstyle(bold("Body weight")), textstyle(Delta * " " * "kg"^{-1}))))),
+  c("percent_imat_pre", "percent_imat_post", bquote(atop(NA, atop(textstyle(bold("Thigh IMAT")), textstyle("pp"))))),
+  
+  c("pcr_p_mrs_pre", "pcr_p_mrs_post", bquote(atop(NA, atop(textstyle(bold("PCr recovery")), textstyle(Delta * " " * tau * " " * "(s)"))))),
+  
+  c("max_oxphos_pre", "max_oxphos_post", bquote(atop(NA, atop(textstyle(bold("Max ox phosphorylation")), textstyle("pmol O"[2] ~ "· sec"^{-1} ~ "· mg"^{-1})))))
 
   #c("age_pre", "age_post", "Age (years)"),
   #c("weight_pre", "weight_post", "Body mass (kg)" ),
 )
 
+
+
 #"Oxygen~uptake~(l %.% min^{-1} %.% kgFFM^{-1})")
 
 
 clinical_limits <- list(
-  c(min = -0.1, max = 0.15),
-  c(min = -3.0, max = 2),
+  c(min = -0.1, max = 0.15), 
+  c(min = -3.0, max = 2), 
   c(min = -4, max = 3),
   c(min = -100, max = 300),
-  c(min = -5, max = 5)
+  c(min = -25, max = 5),
+  c(min = -5, max = 5),
+  c(min = -10, max = 10),
+  c(min = -25, max = 50)
   )
 
 # Info about each plot class
@@ -3832,7 +3963,7 @@ correlation_plots_publication(plot_lipids = TAG_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 100),
+                              save_size = c(240, 100),
                               save_name = "Acylglycerols, AC")
 
 # # Info about each plot class
@@ -3844,7 +3975,7 @@ correlation_plots_publication(plot_lipids = TAG_plot_lipids,
 #                               selected_clinical = clinical_vars,
 #                               y_lims = clinical_limits,
 #                               lipidomicsDF = lipidomicsDF,
-#                               save_size = c(170, 45),
+#                               save_size = c(240, 45),
 #                               save_name = "Acylcarnitine")
 
 
@@ -3858,7 +3989,7 @@ correlation_plots_publication(plot_lipids = Sphingolipids_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 165),
+                              save_size = c(240, 165),
                               save_name = "Ceramides")
 
 # Define plot_lipids and col_titles for Phospholipids (first and second rows combined)
@@ -3870,7 +4001,7 @@ correlation_plots_publication(plot_lipids = Phospholipids_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 165),
+                              save_size = c(240, 165),
                               save_name = "Phopholipids")
 
 # Define plot_lipids and col_titles for Lysophospholipids (first and second rows combined)
@@ -3882,7 +4013,7 @@ correlation_plots_publication(plot_lipids = Lysophospholipids_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 165),
+                              save_size = c(240, 165),
                               save_name = "Lysophopholipids")
 
 ```
@@ -4908,9 +5039,9 @@ for (var in clinical_var){
 }
 ```
 
-# !!! Waterfall: Classes
+# ! Waterfall
 ```{r}
-correlation_waterfall <- function(clinical_var){
+correlation_waterfall <- function(clinical_var, save_sub_folder){
 
 # Filter, rename, and sort the dataframe
 corr_ordered <- correlation_results_crossSection_class %>%
@@ -4976,13 +5107,14 @@ plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
         plot.title = element_text(hjust = .5, face = "bold", size = 8))
     
 
-ggsave(paste0(getwd(), "/outputs/figures/baseline correlations/waterfall/", clinical_var[[1]], ".svg"), plot, device = "pdf", height = 80, width = 55 , units = "mm", bg = "transparent")
+ggsave(paste0(getwd(), "/outputs/figures/baseline correlations/waterfall/", save_sub_folder, clinical_var[[1]], ".svg"), plot, device = "pdf", height = 80, width = 55 , units = "mm", bg = "transparent")
 
 print(plot)
 }
 
 # Define clinical var c(var_name, plot_title, x-lim)
 clinical_var <- list(
+  c("bmi_pre", bquote(bold("Body mass index")), .7),
   c("tdpa_pre", bquote(bold("Total daily physical activity")), .7),
   c("rd_ss2kg_ffm_insulin_pre", bquote(bold("Glucose infusion rate")), .7),
   c("percent_imat_pre", bquote(bold("Thigh IMAT proportion")), .7),
@@ -4992,14 +5124,32 @@ clinical_var <- list(
   c("max_oxphos_pre", bquote("Max oxidative phosphorylation"), .7)
 )
 
+clinical_var_post <- list(
+  c("bmi_post", bquote(bold("Body mass index (post)")), .7),
+  c("tdpa_post", bquote(bold("Total daily physical activity (post)")), .7),
+  c("rd_ss2kg_ffm_insulin_post", bquote(bold("Glucose infusion rate (post)")), .7),
+  c("percent_imat_post", bquote(bold("Thigh IMAT proportion (post)")), .7),
+  c("vo2kg_ffm_post", bquote(bold(VO[2] ~ "per kg FFM (post)")), .7),
+  c("hgb_a1c_post", bquote(bold("Hemoglobin A1c (post)")), .7),
+  c("pcr_p_mrs_post", bquote("PCr recovery (post)"), .7),
+  c("max_oxphos_post", bquote("Max oxidative phosphorylation (post)"), .7)
+)
+
 for (var in clinical_var){
-  correlation_waterfall(var)
+  correlation_waterfall(var, 
+                        save_sub_folder = "")
+}
+
+
+for (var in clinical_var_post){
+  correlation_waterfall(var, 
+                        save_sub_folder = "post/")
 }
 ```
 
-# !!! Heatmap of compositions
+# ! Heatmap of compositions
 ```{r}
- generate_heatmap <- function(colorMap, pLims, hm_title, hm_unit, lipid_class, clin_var){
+ generate_heatmap <- function(colorMap, pLims, hm_title, hm_unit, lipid_class, clin_var, save_sub_path){
   
    # Create new columns 'lipidClass' and 'lipidComposition' using base R
 res_lipid_names <- correlation_results_crossSection_composition %>%
@@ -5078,7 +5228,7 @@ if (is.na(hm_matrix[i, j])) {
             }
           })
    
-   savelocation_svg <- paste0(getwd(), "/outputs/figures/baseline correlations/waterfall/heatmaps/", clin_var[[1]], "/", lipids_groups[[i]][2], ".svg")
+   savelocation_svg <- paste0(getwd(), "/outputs/figures/baseline correlations/waterfall/heatmaps/", save_sub_path, clin_var[[1]], "/", lipids_groups[[i]][2], ".svg")
    dir.create(dirname(savelocation_svg), recursive = TRUE, showWarnings = FALSE)
    
    height <- as.double(lipids_groups[[i]][3])
@@ -5134,6 +5284,7 @@ lipids_groups <- list(
 
 # Define clinical var c(var_name, plot_title, x-lim)
 clinical_var <- list(
+  c("bmi_pre", bquote("Body mass index"), .7),
   c("tdpa_pre", bquote("Total daily physical activity"), .7),
   c("rd_ss2kg_ffm_insulin_pre", bquote("Glucose infusion rate"), .7),
   c("percent_imat_pre", bquote("Thigh IMAT proportion"), .7),
@@ -5143,6 +5294,18 @@ clinical_var <- list(
   c("max_oxphos_pre", bquote("Max oxidative phosphorylation"), .7)
 )
 
+# Define clinical var c(var_name, plot_title, x-lim)
+clinical_var_post <- list(
+  c("bmi_post", bquote("Body mass index (post)"), .7),
+  c("tdpa_post", bquote("Total daily physical activity (post)"), .7),
+  c("rd_ss2kg_ffm_insulin_post", bquote("Glucose infusion rate (post)"), .7),
+  c("percent_imat_post", bquote("Thigh IMAT proportion (post)"), .7),
+  c("vo2kg_ffm_post", bquote(VO[2] ~ "per kg FFM (post)"), .7),
+  c("hgb_a1c_post", bquote("Hemoglobin A1c (post)"), .7),
+  c("pcr_p_mrs_post", bquote("PCr recovery (post)"), .7),
+  c("max_oxphos_post", bquote("Max oxidative phosphorylation (post)"), .7)
+)
+
 for (i in 1:length(lipids_groups)){
   for (var in clinical_var){
     hm <- generate_heatmap(color_mapping_common,
@@ -5150,16 +5313,29 @@ for (i in 1:length(lipids_groups)){
                            hm_title = "", 
                            hm_unit = "Spearman's ρ",
                            lipid_class = lipids_groups[[i]][1],
-                           clin_var = var)
+                           clin_var = var,
+                           save_sub_path = "")
+  }
+}
+
+for (i in 1:length(lipids_groups)){
+  for (var in clinical_var_post){
+    hm <- generate_heatmap(color_mapping_common,
+                           p_value_limits,
+                           hm_title = "", 
+                           hm_unit = "Spearman's ρ",
+                           lipid_class = lipids_groups[[i]][1],
+                           clin_var = var,
+                           save_sub_path = "post/")
   }
 }
 ```
 
-# !!! Publication: correlation grid
+# ! Correlation grid
 ```{r}
 
 # Correlation plot function
-correlation_plots_publication <- function (plot_lipids, col_titles, selected_clinical, row_titles, y_lims, lipidomicsDF, save_size, save_name){
+correlation_plots_publication <- function (plot_lipids, col_titles, selected_clinical, row_titles, y_lims, lipidomicsDF, save_size, save_name, save_sub_path){
   
 for (j in 1:length(selected_clinical)) {
   if (j == 1){
@@ -5213,7 +5389,6 @@ if (plot_lipids[i] %in% c("TAG", "PE", "PC", "PI", "1,2-DG", "1,3-DG")) {
     # Create the plot with a black trendline
  plot <- ggplot(correlation_df, aes(x =  pmol_mg_id, y = !!sym(var_name_pre), shape = group, fill = gender)) +
       geom_point(size = 0.9, stroke = 0.5, color = "black") +
-      geom_smooth(aes(group = 1), method = "lm", se = TRUE, color = "black", alpha = 0.3, linewidth = 0.5) +
   labs(
     x = x_label,
     y = if (i == 1) selected_clinical[[j]][[2]] else NULL,
@@ -5246,7 +5421,14 @@ if (plot_lipids[i] %in% c("TAG", "PE", "PC", "PI", "1,2-DG", "1,3-DG")) {
            hjust = -.1, vjust = 1.1, size = 2, fontface = "plain", color = "black", check_overlap = T)
       }
     
-    
+  # Add trendlines based on P-values
+  if (p_value < 0.05) {
+    plot <- plot + geom_smooth(aes(group = 1), method = "lm", se = TRUE, color = "black", alpha = 0.3, linewidth = 0.5)
+  } else if (p_value < 0.1) {
+    plot <- plot + geom_smooth(aes(group = 1), method = "lm", se = FALSE, color = "black", linewidth = 0.5, linetype = "dashed")
+  }   
+ 
+ 
     # Add column titles only for the first row with adjusted size and bold
     if (j == 1) {
       plot <- plot + ggtitle(col_titles[i]) + theme(
@@ -5291,7 +5473,7 @@ plot_grid <- wrap_plots(plot_list, ncol = length(plot_lipids), nrow = length(sel
 # print(plot_grid)
 
 # Save the grid of plots in SVG format
-ggsave(paste0(getwd(), "/outputs/figures/baseline correlations/grid_plots_classes/", save_name, ".svg"), plot_grid, device = "pdf", height = save_size[1], width = save_size[2] , units = "mm")
+ggsave(paste0(getwd(), "/outputs/figures/baseline correlations/grid_plots_classes/", save_sub_path, save_name, ".svg"), plot_grid, device = "pdf", height = save_size[1], width = save_size[2] , units = "mm")
 }
 
 # Selected clinical  
@@ -5300,14 +5482,22 @@ clinical_vars <- list(
   c("hgb_a1c_pre", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle( "%"))))),
   c("vo2kg_ffm_pre", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle( "ml · kgFFM"^{-1}))))),
   c("tdpa_pre", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle( "min · day"^{-1}))))),
-  c("percent_imat_pre", bquote(atop(NA, atop(textstyle(bold(Thigh IMAT)), textstyle( "%")))))
-
-    
-  #c("age_pre", "age_post", "Age (years)"),
-  #c("weight_pre", "weight_post", "Body mass (kg)" ),
+  c("bmi_pre", bquote(atop(NA, atop(textstyle(bold(BMI)), textstyle( "kg · m"^{2}))))),
+  c("percent_imat_pre", bquote(atop(NA, atop(textstyle(bold("Thigh IMAT")), textstyle( "%"))))),
+  c("max_oxphos_pre", bquote(atop(NA, atop(textstyle(bold("Max ox phosphorylation")), textstyle("pmol O"[2] ~ "· sec"^{-1} ~ "· mg"^{-1}))))),
+  c("pcr_p_mrs_pre", bquote(atop(NA, atop(textstyle(bold(PCr ~ recovery ~ tau)), textstyle( "s")))))
 )
 
-#"Oxygen~uptake~(l %.% min^{-1} %.% kgFFM^{-1})")
+clinical_vars_post <- list(
+  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Glucose infusion rate")), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
+  c("hgb_a1c_pre", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle( "%"))))),
+  c("vo2kg_ffm_pre", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle( "ml · kgFFM"^{-1}))))),
+  c("tdpa_pre", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle( "min · day"^{-1}))))),
+  c("bmi_pre", bquote(atop(NA, atop(textstyle(bold(BMI)), textstyle( "kg · m"^{2})))))
+  #c("percent_imat_pre", bquote(atop(NA, atop(textstyle(bold("Thigh IMAT")), textstyle( "%"))))),
+  #c("max_oxphos_pre", bquote(atop(NA, atop(textstyle(bold("Max ox phosphorylation")), textstyle("pmol O"[2] ~ "· sec"^{-1} ~ "· mg"^{-1}))))),
+  #c("pcr_p_mrs_pre", bquote(atop(NA, atop(textstyle(bold(PCr ~ recovery ~ tau)), textstyle( "s")))))
+)
 
 
 clinical_limits <- list(
@@ -5315,7 +5505,10 @@ clinical_limits <- list(
   c(min = 4.5, max = 10),
   c(min = 15, max = 45),
   c(min = 0, max = 350),
-  c(min = 5, max = 17.5)
+  c(min = 25, max = 50),
+  c(min = 5, max = 17.5),
+  c(min = 20, max = 80),
+  c(min = 15, max = 35)
   )
 
 # Info about each plot class
@@ -5327,8 +5520,18 @@ correlation_plots_publication(plot_lipids = TAG_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 120),
-                              save_name = "Acylglycerols_AC")
+                              save_size = c(180, 120),
+                              save_name = "Acylglycerols_AC",
+                              save_sub_path = "")
+
+correlation_plots_publication(plot_lipids = TAG_plot_lipids,
+                              col_titles = TAG_plot_colNames,
+                              selected_clinical = clinical_vars_post,
+                              y_lims = clinical_limits,
+                              lipidomicsDF = lipidomicsDF,
+                              save_size = c(180, 120),
+                              save_name = "Acylglycerols_AC",
+                              save_sub_path = "post/")
 
 # # Info about each plot class
 # AC_plot_lipids <- c("AC")
@@ -5339,7 +5542,7 @@ correlation_plots_publication(plot_lipids = TAG_plot_lipids,
 #                               selected_clinical = clinical_vars,
 #                               y_lims = clinical_limits,
 #                               lipidomicsDF = lipidomicsDF,
-#                               save_size = c(170, 45),
+#                               save_size = c(180, 45),
 #                               save_name = "Acylcarnitine")
 
 
@@ -5353,8 +5556,18 @@ correlation_plots_publication(plot_lipids = Sphingolipids_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 165),
-                              save_name = "Ceramides")
+                              save_size = c(180, 165),
+                              save_name = "Ceramides",
+                              save_sub_path = "")
+
+correlation_plots_publication(plot_lipids = Sphingolipids_plot_lipids,
+                              col_titles = Sphingolipids_plot_colNames,
+                              selected_clinical = clinical_vars_post,
+                              y_lims = clinical_limits,
+                              lipidomicsDF = lipidomicsDF,
+                              save_size = c(180, 165),
+                              save_name = "Ceramides",
+                              save_sub_path = "post/")
 
 # Define plot_lipids and col_titles for Phospholipids (first and second rows combined)
 Phospholipids_plot_lipids <- c("PC", "PE", "PC.PE", "PA", "PG", "PS", "PI")
@@ -5365,8 +5578,19 @@ correlation_plots_publication(plot_lipids = Phospholipids_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 165),
-                              save_name = "Phopholipids")
+                              save_size = c(180, 165),
+                              save_name = "Phopholipids",
+                              save_sub_path = "")
+
+correlation_plots_publication(plot_lipids = Phospholipids_plot_lipids,
+                              col_titles = Phospholipids_plot_colNames,
+                              selected_clinical = clinical_vars_post,
+                              y_lims = clinical_limits,
+                              lipidomicsDF = lipidomicsDF,
+                              save_size = c(180, 165),
+                              save_name = "Phopholipids",
+                              save_sub_path = "post/")
+
 
 # Define plot_lipids and col_titles for Lysophospholipids (first and second rows combined)
 Lysophospholipids_plot_lipids <- c("LPC", "LPE", "LPG", "LPI", "LPS")
@@ -5377,15 +5601,25 @@ correlation_plots_publication(plot_lipids = Lysophospholipids_plot_lipids,
                               selected_clinical = clinical_vars,
                               y_lims = clinical_limits,
                               lipidomicsDF = lipidomicsDF,
-                              save_size = c(170, 165),
-                              save_name = "Lysophopholipids")
+                              save_size = c(180, 165),
+                              save_name = "Lysophopholipids",
+                              save_sub_path = "")
+
+correlation_plots_publication(plot_lipids = Lysophospholipids_plot_lipids,
+                              col_titles = Lysophospholipids_plot_colNames,
+                              selected_clinical = clinical_vars_post,
+                              y_lims = clinical_limits,
+                              lipidomicsDF = lipidomicsDF,
+                              save_size = c(180, 165),
+                              save_name = "Lysophopholipids",
+                              save_sub_path = "post/")
 
 ```
 
 
 
-## volcano
 
+## volcano
 ```{r}
 volcano_crossSection <- function(input_vars, save_sub_path){
   # Combine class and composition data
@@ -6245,20 +6479,20 @@ prepare_lipid_data_for_plotting <- function(result_data) {
   for (col in corrected_cols) {
     
     # ********** P ADJUSTMENT ***********
-    
-    # adjust p-values by group and lipidClass
-    # P-values based on test counts within lipid class.
+
+    # # adjust p-values by group and lipidClass
+    # # P-values based on test counts within lipid class.
     pvals_df <- pvals_df %>%
       mutate(lipidClass = sub("([^_]+)_.*", "\\1", lipid)) %>%
       group_by(lipidClass) %>%
       mutate(
-        !!paste0(col, " (corrected)") := p.adjust(.data[[col]], method = "BH")
+        !!paste0(col, " (corrected)") := p.adjust(.data[[col]], method = "none")
       ) %>%
       ungroup() %>%
       select(-lipidClass)  # Remove the lipidClass column
-    
-    #    # P-values based on all test count
-    #   pvals_df[[paste0(col, " (corrected)")]] <- p.adjust(pvals_df[[col]], method = "BH")
+   
+       # P-values based on all test count
+      pvals_df[[paste0(col, " (corrected)")]] <- p.adjust(pvals_df[[col]], method = "none")
   }
   
   # ********** P ADJUSTMENT ***********
@@ -6331,6 +6565,8 @@ if(! "gender" %in% colnames(lipidomicsDF)){
 }
 
 plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit, y_label_cutoff, y.labels, save_subfolder) {
+  
+  print(lipid_class)
   # Filter data based on lipid class and available time
   filtered_data <- lipidomicsDF %>%
     filter(lipidClass == lipid_class & !is.na(time))
@@ -6403,7 +6639,9 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit,
     geom_line(data = mean_data_class, aes(x = x_pos, y = mean_class, group = group), color = "black", linewidth = .7, lineend = "round") +
     labs(y = y_label, x = "") +
     theme_minimal() +
-    theme(axis.title.x = element_blank(),
+    theme(panel.background = element_rect("transparent", color = NA),
+          plot.background = element_rect(fill='transparent', color=NA),
+          axis.title.x = element_blank(),
           axis.text.x = element_text(angle = 45, hjust = 1.2, vjust = 2.4, size = 6),
           axis.title.y = element_text(size = 7, face = "plain"),
           axis.text.y = element_text(size = 6),
@@ -7027,14 +7265,16 @@ generate_heatmap <- function(hm_matrix, p_val_matrix, colorMap, pLims, hm_title,
           
           cell_fun = function(j, i, x, y, width, height, fill) {
             
-            if (!is.na(p_val_matrix[i, j])) {
-              if (p_val_matrix[i, j] < pLims$p1) {
-                grid.text("+++", x, y, gp = gpar(col = "black", fontsize = 5, fontface = "plain"), just = "center")
-              } else if (p_val_matrix[i, j] < pLims$p2) {
-                grid.text("++", x, y, gp = gpar(col = "black", fontsize = 5, fontface = "plain"), just = "center")
-              } else if (p_val_matrix[i, j] < pLims$p3) {
-                grid.text("+", x, y, gp = gpar(col = "black", fontsize =5, fontface = "plain"), just = "center")
-              }
+            if (is.na(hm_matrix[i, j])) {
+  grid.rect(unit(x, "npc"), unit(y, "npc"), width, height, gp = gpar(fill = "grey", col = NA))
+} else if (!is.na(p_val_matrix[i, j])) {
+  if (p_val_matrix[i, j] < pLims$p1) {
+    grid.text("***", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 6, fontface = "bold", lineheight = 0.35), just = "center")
+  } else if (p_val_matrix[i, j] < pLims$p2) {
+    grid.text("**", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 6, fontface = "bold", lineheight = 0.35), just = "center")
+  } else if (p_val_matrix[i, j] < pLims$p3) {
+    grid.text("*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 6, fontface = "bold", lineheight = 0.35), just = "center")
+                  }
             }
           })
 }
@@ -7096,7 +7336,9 @@ for (i in 1:length(lipids_groups)){
        heatmap_legend_side = "right", 
        annotation_legend_side = "right",
        column_title_gp = gpar(fontsize = 6, fontface = "bold", lineheight = -5), # Adjust lineheight for spacing
-       row_title_gp = gpar(fontsize = 6, fontface = "bold"))
+       row_title_gp = gpar(fontsize = 6, fontface = "bold"),
+       background = "transparent")
+  
   
   # Close the device
   dev.off()
