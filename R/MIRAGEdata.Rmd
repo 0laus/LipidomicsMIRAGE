@@ -2852,8 +2852,8 @@ label(mirage_included$sex_0_male_1_female) <- "Sex"
 label(mirage_included$age_pre) <- "Age"
 label(mirage_included$weight_pre) <- "Weight"
 label(mirage_included$bmi_pre) <- "BMI"
-label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "GIR/Iᶜ"
-label(mirage_included$tdpa_pre) <- "Physical activityᵃ"
+label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "GIR/Iᵇ"
+label(mirage_included$tdpa_pre) <- "Physical activity"
 label(mirage_included$hgb_a1c_pre) <- "HbA1c"
 label(mirage_included$cholesterol_pre) <- "Total cholesterol"
 label(mirage_included$ldl_pre) <- "LDL cholesterol"
@@ -2862,7 +2862,7 @@ label(mirage_included$t2d_status) <- "Type 2-diabetes"
 label(mirage_included$fat_mass_dxa_pre) <- "Fat mass"
 label(mirage_included$lean_mass_dxa_pre) <- "Lean mass"
 label(mirage_included$thigh_muscle_g_pre) <- "Thigh muscle"
-label(mirage_included$percent_imat_pre) <- "Thigh IMATᵇ"
+label(mirage_included$percent_imat_pre) <- "Thigh IMATᵃ"
 label(mirage_included$vo2kg_ffm_pre) <- "VO₂ peak"
 label(mirage_included$triglycerides_pre) <- "Triglycerides"
 
@@ -2889,9 +2889,9 @@ units(mirage_included$triglycerides_pre) <- "mmol/l"
 
 
 # Footnote
-footnote <-paste0 ("ᵃ Minutes of daily physical activity above 1.5 metabolic equavalent of task (MET)<br/>", # <br/> used as it's a html table
-                   "ᵇ Intramuscular adipose tissue<br/>",
-                   "ᶜ Glucose infusion rate normalized to fat-free mass and blood insulin")
+footnote <-paste0 ("ᵃ Glucose infusion rate normalized to fat-free mass and blood insulin<br/>", # <br/> used as linebreak for html table
+                   # "ᵇ Intramuscular adipose tissue<br/>",
+                   "ᵇ Minutes of daily physical activity above 1.5 metabolic equavalent of task (MET)")
 
 
 # Define a custom render function
@@ -3038,7 +3038,7 @@ custom_render <- function(x, name, ...) {
 # Generate the table with custom rendering for weight
 result_table <- table1(~ + age_pre + sex_0_male_1_female  + t2d_status + rd_ss2kg_ffm_insulin_pre + hgb_a1c_pre + 
                          bmi_pre + weight_pre + 
-                         fat_mass_dxa_pre + lean_mass_dxa_pre + percent_imat_pre  + vo2kg_ffm_pre + tdpa_pre +
+                         fat_mass_dxa_pre + lean_mass_dxa_pre + vo2kg_ffm_pre + tdpa_pre +
                           + triglycerides_pre + cholesterol_pre + ldl_pre + hdl_pre | group,
                        data = mirage_included,
                        render = custom_render,
@@ -7220,11 +7220,13 @@ estimates_gr_list <- lapply(lipids_groups, filter_lipid_group_row, data_frame = 
 matrices_pvals <- lapply(pvals_gr_list, function(x) as.matrix(x))
 matrices_estimates <- lapply(estimates_gr_list, function(x) as.matrix(x))
 
+# Remove Cer ratio row
+matrices_estimates[["gr_cer"]] <- matrices_estimates[["gr_cer"]] [rownames(matrices_estimates[["gr_cer"]] ) != "Cer ratio_16:0 24:0", ]
+matrices_pvals[["gr_cer"]] <- matrices_pvals[["gr_cer"]] [rownames(matrices_pvals[["gr_cer"]] ) != "Cer ratio_16:0 24:0", ]
 
 generate_heatmap <- function(hm_matrix, p_val_matrix, colorMap, pLims, hm_title, hm_unit) {
   
-  
-  # Remove class name from matrix to only show composition
+    # Remove class name from matrix to only show composition
   colnames(hm_matrix) <- sub(".*?_", "", colnames(hm_matrix))
   
   Heatmap(hm_matrix,
