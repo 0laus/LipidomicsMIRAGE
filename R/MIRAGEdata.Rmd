@@ -7232,7 +7232,7 @@ filter_lipid_group_row <- function(data_frame, lipid_group) {
   data_frame_with_lipid <- tibble::rownames_to_column(data_frame, var = "lipid")
   
   # Sort the dataframe by the temporary lipid column
-  sorted_data_frame_with_lipid <- data_frame_with_lipid[order(data_frame_with_lipid$lipid), ]
+  sorted_data_frame_with_lipid <- data_frame_with_lipid# data_frame_with_lipid[order(data_frame_with_lipid$lipid), ]
   
   # Filter based on the pattern
   sorted_filtered_data_frame_with_lipid <- sorted_data_frame_with_lipid[grepl(pattern, sorted_data_frame_with_lipid$lipid), ]
