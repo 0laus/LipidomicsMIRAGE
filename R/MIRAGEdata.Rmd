@@ -554,10 +554,41 @@ lipidomicsDF <- add_ratio_lipidomics(lipidomicsDF = lipidomicsDF)
 lipidomicsDF <- lipidomicsDF %>%
   arrange(id, time)
 
-# Find all lipidClass-lipidComposition
+### Correct sorting of AC
+# Function to add leading zeros to single-digit numbers
+add_leading_zero <- function(lipid) {
+  gsub("\\b(\\d):", "0\\1:", lipid)
+}
+
+# Function to remove leading zeros from numbers
+remove_leading_zero <- function(lipid) {
+  gsub("\\b0(\\d):", "\\1:", lipid)
+}
+
+# Add leading zeros only for lipidClass "AC"
+lipidomicsDF$lipidComposition <- ifelse(
+  lipidomicsDF$lipidClass == "AC", 
+  add_leading_zero(lipidomicsDF$lipidComposition), 
+  lipidomicsDF$lipidComposition
+)
+
+# Find and sort all lipidClass-lipidComposition
 unique_combinations <- lipidomicsDF %>%
   distinct(lipidClass, lipidComposition) %>%
   arrange(lipidClass, lipidComposition)
+
+# Remove leading zeros only for lipidClass "AC"
+unique_combinations$lipidComposition <- ifelse(
+  unique_combinations$lipidClass == "AC", 
+  remove_leading_zero(unique_combinations$lipidComposition), 
+  unique_combinations$lipidComposition
+)
+
+lipidomicsDF$lipidComposition <- ifelse(
+  lipidomicsDF$lipidClass == "AC", 
+  remove_leading_zero(lipidomicsDF$lipidComposition), 
+  lipidomicsDF$lipidComposition
+)
 ```
 
 **Define unique lipid classes**
@@ -688,7 +719,7 @@ mirage_data$mvpa_mins_day_post <- mirage_data$mpa_mins_day_post + mirage_data$vp
 # List with pre-post variables of interest
 glycemicControl <- list(
   #c("rd_ss1kg_ffm_insulin_pre", "rd_ss1kg_ffm_insulin_post", "Glucose RD per FFM and insulin (?)"),
-  c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post", "Glucose RD per FFM and insulin (?)"),
+  c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post", "Glucose RD per kgFFM per insulin"),
   c("hgb_a1c_pre", "hgb_a1c_post", "HbA1c (mmol / mol?)"),
   c("homair_pre", "homair_post", "HOMAIR (abr unit)")
   #c("egp0kg_ffm_pre", "egp0kg_ffm_post", "Endogenous glucose production (?)"),
@@ -2852,8 +2883,8 @@ label(mirage_included$sex_0_male_1_female) <- "Sex"
 label(mirage_included$age_pre) <- "Age"
 label(mirage_included$weight_pre) <- "Weight"
 label(mirage_included$bmi_pre) <- "BMI"
-label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "GIR/Iᵇ"
-label(mirage_included$tdpa_pre) <- "Physical activity"
+label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "ᵃ Glucose R<sub>d</sub><br/>"
+label(mirage_included$tdpa_pre) <- "ᵇ Physical activity"
 label(mirage_included$hgb_a1c_pre) <- "HbA1c"
 label(mirage_included$cholesterol_pre) <- "Total cholesterol"
 label(mirage_included$ldl_pre) <- "LDL cholesterol"
@@ -2862,7 +2893,7 @@ label(mirage_included$t2d_status) <- "Type 2-diabetes"
 label(mirage_included$fat_mass_dxa_pre) <- "Fat mass"
 label(mirage_included$lean_mass_dxa_pre) <- "Lean mass"
 label(mirage_included$thigh_muscle_g_pre) <- "Thigh muscle"
-label(mirage_included$percent_imat_pre) <- "Thigh IMATᵃ"
+label(mirage_included$percent_imat_pre) <- "ᵃThigh IMAT"
 label(mirage_included$vo2kg_ffm_pre) <- "VO₂ peak"
 label(mirage_included$triglycerides_pre) <- "Triglycerides"
 
@@ -2872,7 +2903,7 @@ label(mirage_included$triglycerides_pre) <- "Triglycerides"
 units(mirage_included$age_pre) <- "years"
 units(mirage_included$weight_pre) <- "kg"
 units(mirage_included$bmi_pre) <- "kg/m"
-units(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "mg/kg/min/ins"
+units(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "(mg/kgFFM/min)/insulin"
 units(mirage_included$tdpa_pre) <- "min"
 units(mirage_included$hgb_a1c_pre) <- "%"
 units(mirage_included$cholesterol_pre) <- "mmol/l" 
@@ -2889,9 +2920,9 @@ units(mirage_included$triglycerides_pre) <- "mmol/l"
 
 
 # Footnote
-footnote <-paste0 ("ᵃ Glucose infusion rate normalized to fat-free mass and blood insulin<br/>", # <br/> used as linebreak for html table
+footnote <-paste0 ("ᵃ Rate of glucose disposal (R<sub>d</sub>) normalized to fat-free mass and blood insulin<br/>", # <br/> used as linebreak for html table
                    # "ᵇ Intramuscular adipose tissue<br/>",
-                   "ᵇ Minutes of daily physical activity above 1.5 metabolic equavalent of task (MET)")
+                   "ᵇ Minutes of daily physical activity above 1.5 metabolic equivalent of task (MET)")
 
 
 # Define a custom render function
@@ -3593,7 +3624,7 @@ print(plot)
 clinical_var <- list(
   c("weight_ch", bquote(bold("Body weight")), .7),
   c("tdpa_ch", bquote(bold("Total daily physical activity")), .7),
-  c("rd_ss2kg_ffm_insulin_ch", bquote(bold("Glucose infusion rate")), .7),
+  c("rd_ss2kg_ffm_insulin_ch", bquote(bold("Rate of glucose disposal")), .7),
   c("percent_imat_ch", bquote(bold("Thigh IMAT proportion")), .7),
   c("vo2kg_ffm_ch", bquote(bold(VO[2] ~ "per kg FFM")), .7),
   c("hgb_a1c_ch", bquote(bold("Hemoglobin A1c")), .7),
@@ -3747,7 +3778,7 @@ lipids_groups <- list(
 clinical_var <- list(
   c("weight_ch", bquote("Body weight"), .7),
   c("tdpa_ch", bquote("Total daily physical activity"), .7),
-  c("rd_ss2kg_ffm_insulin_ch", bquote("Glucose infusion rate"), .7),
+  c("rd_ss2kg_ffm_insulin_ch", bquote("Rate of glucose disposal"), .7),
   c("percent_imat_ch", bquote("Thigh IMAT proportion"), .7),
   c("vo2kg_ffm_ch", bquote(VO[2] ~ "per kg FFM"), .7),
   c("hgb_a1c_ch", bquote("Hemoglobin A1c"), .7),
@@ -3921,9 +3952,9 @@ plot_grid <- wrap_plots(plot_list, ncol = length(plot_lipids), nrow = length(sel
 ggsave(paste0(getwd(), "/outputs/figures/change correlations/grid plots/", save_name, ".svg"), plot_grid, device = "pdf", height = save_size[1], width = save_size[2] , units = "mm")
 }
 
-# Selected clinical  
+# Selected clinical
 clinical_vars <- list(
-  c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post", bquote(atop(NA, atop(textstyle(bold("Glucose infusion rate")), textstyle(Delta * " " * "mg ·(min·kgFFM·ins)"^{-1}))))),
+  c("rd_ss2kg_ffm_insulin_pre", "rd_ss2kg_ffm_insulin_post", bquote(atop(NA, atop(textstyle(bold("Rate of glucose disposal")), textstyle(Delta * " " * "mg ·(min·kgFFM·ins)"^{-1}))))),
   c("hgb_a1c_pre", "hgb_a1c_post", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle(Delta * " " * "%"))))),
   c("vo2kg_ffm_pre", "vo2kg_ffm_post", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle(Delta * " " * "ml · kgFFM"^{-1}))))),
   c("tdpa_pre", "tdpa_post", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle(Delta * " " * ( "min · day"^{-1})))))),
@@ -5028,7 +5059,7 @@ print(plot)
 # Define clinical var c(var_name, plot_title, x-lim)
 clinical_var <- list(
   c("tdpa_ch", bquote(bold("Total daily physical activity")), .7),
-  c("rd_ss2kg_ffm_insulin_ch", bquote(bold("Glucose infusion rate")), .7),
+  c("rd_ss2kg_ffm_insulin_ch", bquote(bold("Rate of glucose disposal")), .7),
   c("percent_imat_ch", bquote(bold("Thigh IMAT proportion")), .7),
   c("vo2kg_ffm_ch", bquote(bold(VO[2] ~ "per kg FFM")), .7),
   c("hgb_a1c_ch", bquote(bold("Hemoglobin A1c")), .7)
@@ -5116,7 +5147,7 @@ print(plot)
 clinical_var <- list(
   c("bmi_pre", bquote(bold("Body mass index")), .7),
   c("tdpa_pre", bquote(bold("Total daily physical activity")), .7),
-  c("rd_ss2kg_ffm_insulin_pre", bquote(bold("Glucose infusion rate")), .7),
+  c("rd_ss2kg_ffm_insulin_pre", bquote(bold("Rate of glucose disposal")), .7),
   c("percent_imat_pre", bquote(bold("Thigh IMAT proportion")), .7),
   c("vo2kg_ffm_pre", bquote(bold(VO[2] ~ "per kg FFM")), .7),
   c("hgb_a1c_pre", bquote(bold("Hemoglobin A1c")), .7),
@@ -5127,7 +5158,7 @@ clinical_var <- list(
 clinical_var_post <- list(
   c("bmi_post", bquote(bold("Body mass index (post)")), .7),
   c("tdpa_post", bquote(bold("Total daily physical activity (post)")), .7),
-  c("rd_ss2kg_ffm_insulin_post", bquote(bold("Glucose infusion rate (post)")), .7),
+  c("rd_ss2kg_ffm_insulin_post", bquote(bold("Rate of glucose disposal (post)")), .7),
   c("percent_imat_post", bquote(bold("Thigh IMAT proportion (post)")), .7),
   c("vo2kg_ffm_post", bquote(bold(VO[2] ~ "per kg FFM (post)")), .7),
   c("hgb_a1c_post", bquote(bold("Hemoglobin A1c (post)")), .7),
@@ -5286,7 +5317,7 @@ lipids_groups <- list(
 clinical_var <- list(
   c("bmi_pre", bquote("Body mass index"), .7),
   c("tdpa_pre", bquote("Total daily physical activity"), .7),
-  c("rd_ss2kg_ffm_insulin_pre", bquote("Glucose infusion rate"), .7),
+  c("rd_ss2kg_ffm_insulin_pre", bquote("Rate of glucose disposal"), .7),
   c("percent_imat_pre", bquote("Thigh IMAT proportion"), .7),
   c("vo2kg_ffm_pre", bquote(VO[2] ~ "per kg FFM"), .7),
   c("hgb_a1c_pre", bquote("Hemoglobin A1c"), .7),
@@ -5298,7 +5329,7 @@ clinical_var <- list(
 clinical_var_post <- list(
   c("bmi_post", bquote("Body mass index (post)"), .7),
   c("tdpa_post", bquote("Total daily physical activity (post)"), .7),
-  c("rd_ss2kg_ffm_insulin_post", bquote("Glucose infusion rate (post)"), .7),
+  c("rd_ss2kg_ffm_insulin_post", bquote("Rate of glucose disposal (post)"), .7),
   c("percent_imat_post", bquote("Thigh IMAT proportion (post)"), .7),
   c("vo2kg_ffm_post", bquote(VO[2] ~ "per kg FFM (post)"), .7),
   c("hgb_a1c_post", bquote("Hemoglobin A1c (post)"), .7),
@@ -5478,7 +5509,7 @@ ggsave(paste0(getwd(), "/outputs/figures/baseline correlations/grid_plots_classe
 
 # Selected clinical  
 clinical_vars <- list(
-  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Glucose infusion rate")), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
+  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Rate of glucose disposal")), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
   c("hgb_a1c_pre", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle( "%"))))),
   c("vo2kg_ffm_pre", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle( "ml · kgFFM"^{-1}))))),
   c("tdpa_pre", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle( "min · day"^{-1}))))),
@@ -5489,7 +5520,7 @@ clinical_vars <- list(
 )
 
 clinical_vars_post <- list(
-  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Glucose infusion rate")), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
+  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Rate of glucose disposal")), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
   c("hgb_a1c_pre", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle( "%"))))),
   c("vo2kg_ffm_pre", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle( "ml · kgFFM"^{-1}))))),
   c("tdpa_pre", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle( "min · day"^{-1}))))),
@@ -5997,6 +6028,9 @@ lipid_classes_per_comp <- unique_combinations$lipidClass[!unique_combinations$li
 
 lipid_compositions <- unique_combinations$lipidComposition[!unique_combinations$lipidClass == "PC.PE"]
 
+# Order compositions correcty
+order(lipid_compositions)
+
 # # Run function for lipid composition
 # # PC.PE is not analysed as a composition, but only as class
 # result.lipid.pre_post.class_comp <- pmap(
@@ -6486,7 +6520,7 @@ prepare_lipid_data_for_plotting <- function(result_data) {
       mutate(lipidClass = sub("([^_]+)_.*", "\\1", lipid)) %>%
       group_by(lipidClass) %>%
       mutate(
-        !!paste0(col, " (corrected)") := p.adjust(.data[[col]], method = "none")
+        !!paste0(col, " (corrected)") := p.adjust(.data[[col]], method = "none") # METHOD FOR P-adjust: none, e.g. no adjustment applied.
       ) %>%
       ungroup() %>%
       select(-lipidClass)  # Remove the lipidClass column
@@ -6531,7 +6565,6 @@ prepare_lipid_data_for_plotting <- function(result_data) {
 
 # Outlier rm
 est_and_p_lipid_comp.outlierRM <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class_comp.outlierRM)  
-
 
 # # Prepare data for plotting lipid classes
 # est_and_p_pvals_lipid_class <- prepare_lipid_data_for_plotting(result.lipid.pre_post.class)
@@ -6914,6 +6947,8 @@ ggsave(filename, plot = plot_ratios, device = device_out, width = 4, height = 3)
 # When class and composition is analysed together, merge p-values and correlations
 pvals_df <- est_and_p_lipid_comp.outlierRM$p.vals
 estimates_df <- est_and_p_lipid_comp.outlierRM$estimates
+
+pvals_df_sorted <- pvals_df[order(pvals_df$lipid), ]
 
 # Select the specified columns for hm_data.p-vals matrix
 pvals_df <- pvals_df[ , c("lipid", "Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
