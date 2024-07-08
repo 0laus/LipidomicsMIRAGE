@@ -2816,7 +2816,7 @@ pvalue <- function(x, name) {
     # Baseline P-value between groups
     p_change <- model.slope.contrasts.results$p.value[model.slope.contrasts.results$group_pairwise == "DIWL - WLEX"]
       
-      
+    
     if (name_change == "age_change"){
       p_vals <- c(sub("<", "&lt;", format.pval(p, digits=2, eps=0.001)),
                       paste0("<i>", sub("<", "&lt;", format.pval(p_change, digits = 2, eps = 0.001)), "</i>")
@@ -3008,22 +3008,46 @@ custom_render <- function(x, name, ...) {
     p <- NULL; p_hed_ch <- NULL
         }
       
-    
+    # Number of decimal places to show
+decimal_places <- 1
+
     # Calculate stats for baseline
     stats_pre <- stats.default(x)
+  
+    SD_stats_pre_rounded <- round(stats_pre$SD, decimal_places)
+    MEAN_stats_pre_rounded <- round(stats_pre$MEAN, decimal_places)
     
-    if (name == "age_pre" ){
-      mean_sd_pre <- with(stats.apply.rounding(stats_pre, digits = 2),
-                          c(sprintf("%s (%s)", MEAN, SD)))
+    # Formatting the result to display one decimal place instead of no decimals if rounded to .0
+MEAN_stats_pre_rounded <- format(MEAN_stats_pre_rounded, nsmall = decimal_places)
+SD_stats_pre_rounded <- format(SD_stats_pre_rounded, nsmall = decimal_places)
+    
+    if (name == "rd_ss2kg_ffm_insulin_pre" ){
+      mean_sd_pre <- with(stats.apply.rounding(stats_pre, digits = 2), 
+                      c(sprintf("%s (%s)", MEAN, SD)))
     }else{
-      mean_sd_pre <- with(stats.apply.rounding(stats_pre, digits = 2),
-                          c(sprintf("%s (%s)", MEAN, SD)))
+      mean_sd_pre <- sprintf("%s (%s)", MEAN_stats_pre_rounded, SD_stats_pre_rounded)
     }
+
+    ### If constant number of digits are wished use:
+    # mean_sd_pre <- with(stats.apply.rounding(stats_pre, digits = 2), 
+    #                       c(sprintf("%s (%s)", MEAN, SD)))
     
-    stats_change <- stats.default(mirage_included[[name_change]] [mirage_included$group == current_group])
-    mean_sd_change <- with(stats.apply.rounding(stats_change, digits = 2),
-                           sprintf("<i>%s (%s)", MEAN, SD))
-    
+# Calculate stats
+stats_change <- stats.default(mirage_included[[name_change]][mirage_included$group == current_group])
+
+# Round mean and standard deviation to the desired decimal places
+MEAN_stats_change_rounded <- round(stats_change$MEAN, decimal_places)
+SD_stats_change_rounded <- round(stats_change$SD, decimal_places)
+
+# Format the mean and standard deviation with one decimal place
+mean_sd_change <- sprintf("<i>%.1f (%.1f)", MEAN_stats_change_rounded, SD_stats_change_rounded)
+
+
+### Old code to show number of digits instead of decimal places        
+    # stats_change <- stats.default(mirage_included[[name_change]] [mirage_included$group == current_group])
+    # mean_sd_change <- with(stats.apply.rounding(stats_change, digits = 2),
+    #                        sprintf("<i>%s (%s)", MEAN, SD))
+    # 
         
     # Don't calculate stat changes for age
     if (name == "age_pre" | name == "bmi_pre"){
@@ -3631,8 +3655,6 @@ clinical_var <- list(
   c("pcr_p_mrs_ch", bquote("PCr recovery"), .7),
   c("max_oxphos_ch", bquote("Max oxidative phosphorylation"), .7)
 )
-
-
 
 for (var in clinical_var){
   correlation_waterfall(var)
@@ -5000,77 +5022,8 @@ for (lipid_class in unique_lipid_classes) { # [!unique_lipid_classes == "Cer rat
 # correlation_results_crossSection_class <- readRDS(file = file_correlation_values_crossSection_class)
 
 ```
-
-```{r}
-correlation_waterfall <- function(clinical_var){
-
-# Filter, rename, and sort the dataframe
-corr_ordered <- correlation_values_ch_class %>%
-  filter(test_against %in% clinical_var[[1]]) %>% 
-  mutate(lipid = ifelse(lipid == "PC.PE", "PC/PE", lipid)) %>% 
-  filter(lipid != "Cer ratio") %>% 
-  arrange(spearman_rho_all)
-
-# Ensure 'lipid' is a factor and set its levels based on the sorted order
-corr_ordered$lipid <- factor(corr_ordered$lipid, levels = corr_ordered$lipid)
-
-# Get significance helper function
-get_significance <- function(p_value) {
-  if (p_value < 0.001) {
-    return("***")
-  }else if (p_value < 0.01){
-    return("**")
-    } else if (p_value < 0.05) {
-    return("*")
-  } else {
-    return("")
-  }
-}
-corr_ordered$significance <- sapply(corr_ordered$spearman_p_all, get_significance)
-
-plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
-   geom_col(aes(fill = ifelse(significance == "", "grey", ifelse(spearman_rho_all > 0, "positive", "negative"))),
-           color = "black", size = 1) +
-  geom_text(aes(label = significance,
-                y = ifelse(spearman_rho_all > 0, -0.05, 0.05),
-                hjust = ifelse (spearman_rho_all > 0, 1, 0) ), # Adjust vertical position
-            vjust = 0.8,      # Center the text horizontally
-            size = 4) +      # Enlarge the size of asterisks
-  coord_flip() +
-  labs(x = "Predictor Variable", y = "Spearman's ρ", title = clinical_var[[2]]) +
-  
-  geom_hline(yintercept = 0, color = "black", size = 1) +
-  scale_fill_manual(values = c(positive = "#FFB3B3", negative = "#B3C7E6", grey = "grey"), guide = "none") +
-  ylim(-as.numeric(clinical_var[3]), as.numeric(clinical_var[[3]])) +
-  theme(panel.background = element_rect("white"),
-        axis.text = element_text(color = "black", size = 9),
-        axis.title.y = element_blank(),
-        axis.text.y = element_text(size = 7),
-        axis.title.x = element_text(size = 7, color = "black"),
-        axis.text.x = element_text(size = 7),
-        axis.line = element_line(size = 1),
-        plot.title = element_text(hjust = .5, face = "bold", size = 8))
-
-ggsave(paste0(getwd(), "/outputs/figures/waterfall/", clinical_var[[1]], ".svg"), plot, device = "pdf", height = 80, width = 55 , units = "mm")
-
-print(plot)
-}
-
-# Define clinical var c(var_name, plot_title, x-lim)
-clinical_var <- list(
-  c("tdpa_ch", bquote(bold("Total daily physical activity")), .7),
-  c("rd_ss2kg_ffm_insulin_ch", bquote(bold("Rate of glucose disposal")), .7),
-  c("percent_imat_ch", bquote(bold("Thigh IMAT proportion")), .7),
-  c("vo2kg_ffm_ch", bquote(bold(VO[2] ~ "per kg FFM")), .7),
-  c("hgb_a1c_ch", bquote(bold("Hemoglobin A1c")), .7)
-)
-
-for (var in clinical_var){
-  correlation_waterfall(var)
-}
-```
-
 # ! Waterfall
+
 ```{r}
 correlation_waterfall <- function(clinical_var, save_sub_folder){
 
@@ -5124,7 +5077,7 @@ plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
   labs(x = "Predictor Variable", y = expression("Spearman's " * rho), title = clinical_var[[2]]) +
    scale_fill_identity() + 
    #scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, limits = c(-1, 1), guide = "none") +
-  geom_hline(yintercept = 0, color = "black", size = 1) +
+  geom_hline(yintercept = 0, color = "black", linewidth = 1) +
   #scale_fill_manual(values = c(positive = "#FFB3B3", negative = "#B3C7E6", grey = "grey"), guide = "none") +
   ylim(-as.numeric(clinical_var[3]), as.numeric(clinical_var[[3]])) +
   theme(panel.background = element_rect("transparent"),
@@ -5134,7 +5087,7 @@ plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
         axis.text.y = element_text(size = 7),
         axis.title.x = element_text(size = 7, color = "black"),
         axis.text.x = element_text(size = 7),
-        axis.line = element_line(size = 1),
+        axis.line = element_line(linewidth = 1),
         plot.title = element_text(hjust = .5, face = "bold", size = 8))
     
 
@@ -6623,6 +6576,10 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit,
   # Get p-values
   p_slope_DIWL_WLEX.num <- p_val_df[[lipid_class]]$slope_results[p_val_df[[lipid_class]]$slope_results$contrast =="Pre - Post : DIWL - WLEX", c("p.value")]
   
+    p_slope_DIWL_HED.num <- p_val_df[[lipid_class]]$slope_results[p_val_df[[lipid_class]]$slope_results$contrast =="Pre - Post : HED - DIWL", c("p.value")]
+    
+    p_slope_WLEX_HED.num <- p_val_df[[lipid_class]]$slope_results[p_val_df[[lipid_class]]$slope_results$contrast =="Pre - Post : HED - WLEX", c("p.value")]
+  
   p_prepost_HED.num <- p_val_df[[lipid_class]]$prepost_results[p_val_df[[lipid_class]]$prepost_results$contrast =="Pre HED - Post HED", c("p.value")]
   
   p_prepost_DIWL.num <- p_val_df[[lipid_class]]$prepost_results[p_val_df[[lipid_class]]$prepost_results$contrast =="Pre DIWL - Post DIWL", c("p.value")]
@@ -6643,6 +6600,16 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit,
   p_prepost_HED<- format_p_value(p_prepost_HED.num)
   p_prepost_DIWL <- format_p_value(p_prepost_DIWL.num)
   p_prepost_WLEX <- format_p_value(p_prepost_WLEX.num)
+  
+  
+  # Add * if HED time x group against HED is significant
+  if (p_slope_DIWL_HED.num < 0.05){
+    p_prepost_DIWL <- paste0(p_prepost_DIWL, "*")
+  }
+  
+  if (p_slope_WLEX_HED.num < 0.05){
+    p_prepost_WLEX <- paste0(p_prepost_WLEX, "*")
+  }
   
   
   # Use switch to simplify the conditional checks
@@ -6702,18 +6669,18 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit,
     geom_line(data=tibble(x = c(x_pos[5]+x_offset, x_pos[6]- x_offset)), y =c(y_pos_line_1, y_pos_line_1), aes(x=x, y=y), inherit.aes = FALSE) +
     geom_line(data=tibble(x = c((x_pos[2]-x_pos[1])/2+x_pos[1], (x_pos[4]-x_pos[3])/2+x_pos[3])), y =c(y_pos_line_2, y_pos_line_2), aes(x=x, y=y), inherit.aes = FALSE)+
     geom_text(data = tibble(x = c((x_pos[2]-x_pos[1])/2 + x_pos[1])), y = c(y_pos_text_1), aes(x = x, y = y),
-          label = p_prepost_DIWL, inherit.aes = FALSE, size = text_size, 
-          fontface = ifelse(p_prepost_DIWL.num < 0.05, "bold", "plain")) +
-geom_text(data = tibble(x = c((x_pos[4]-x_pos[3])/2 + x_pos[3])), y = c(y_pos_text_1), aes(x = x, y = y),
-          label = p_prepost_WLEX, inherit.aes = FALSE, size = text_size, 
-          fontface = ifelse(p_prepost_WLEX.num < 0.05, "bold", "plain")) + 
-geom_text(data = tibble(x = c((x_pos[6]-x_pos[5])/2 + x_pos[5])), y = c(y_pos_text_1), aes(x = x, y = y),
-          label = p_prepost_HED, inherit.aes = FALSE, size = text_size, 
-          fontface = ifelse(p_prepost_HED.num < 0.05, "bold", "plain")) + 
-geom_text(data = tibble(x = c((x_pos[1] + x_pos[4]) / 2)), y = c(y_pos_text_2), aes(x = x, y = y),
-          label = p_slope_DIWL_WLEX, inherit.aes = FALSE, size = text_size, 
-          fontface = ifelse(p_slope_DIWL_WLEX.num < 0.05, "bold", "plain")) + 
-
+              label = p_prepost_DIWL, inherit.aes = FALSE, size = text_size, 
+              fontface = ifelse(p_prepost_DIWL.num < 0.05, "bold", "plain")) +
+    geom_text(data = tibble(x = c((x_pos[4]-x_pos[3])/2 + x_pos[3])), y = c(y_pos_text_1), aes(x = x, y = y),
+              label = p_prepost_WLEX, inherit.aes = FALSE, size = text_size, 
+              fontface = ifelse(p_prepost_WLEX.num < 0.05, "bold", "plain")) + 
+    geom_text(data = tibble(x = c((x_pos[6]-x_pos[5])/2 + x_pos[5])), y = c(y_pos_text_1), aes(x = x, y = y),
+              label = p_prepost_HED, inherit.aes = FALSE, size = text_size, 
+              fontface = ifelse(p_prepost_HED.num < 0.05, "bold", "plain")) + 
+    geom_text(data = tibble(x = c((x_pos[1] + x_pos[4]) / 2)), y = c(y_pos_text_2), aes(x = x, y = y),
+              label = p_slope_DIWL_WLEX, inherit.aes = FALSE, size = text_size, 
+              fontface = ifelse(p_slope_DIWL_WLEX.num < 0.05, "bold", "plain")) + 
+    
     
     # Add lines and text for group labels
     geom_text(data= tibble(x = c((x_pos[1]+x_pos[2])/2, (x_pos[3]+x_pos[4])/2, (x_pos[5]+x_pos[6])/2)), y =c(0), aes(x=x, y=y),
@@ -7231,11 +7198,8 @@ filter_lipid_group_row <- function(data_frame, lipid_group) {
   # Convert row names to a temporary column for sorting and filtering
   data_frame_with_lipid <- tibble::rownames_to_column(data_frame, var = "lipid")
   
-  # Sort the dataframe by the temporary lipid column
-  sorted_data_frame_with_lipid <- data_frame_with_lipid# data_frame_with_lipid[order(data_frame_with_lipid$lipid), ]
-  
   # Filter based on the pattern
-  sorted_filtered_data_frame_with_lipid <- sorted_data_frame_with_lipid[grepl(pattern, sorted_data_frame_with_lipid$lipid), ]
+  sorted_filtered_data_frame_with_lipid <- data_frame_with_lipid[grepl(pattern, data_frame_with_lipid$lipid), ]
   
   # Drop the temporary lipid column and return to original format
   rownames(sorted_filtered_data_frame_with_lipid) <- sorted_filtered_data_frame_with_lipid$lipid
