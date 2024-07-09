@@ -5871,11 +5871,17 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
     data_to_model <- filter(dataset, lipidClass == lipidclass & lipidComposition == lipidcomposition)
   } else {
     data_to_model <- filter(dataset, lipidClass == lipidclass)
+    
+    # Make sum for each id and timepoint
+    data_to_model <- data_to_model %>%
+    group_by(id, lipidClass, time, group) %>%
+    summarize(pmol_mg_sum = sum(pmol_mg, na.rm = TRUE),, .groups = "drop") %>%
+    ungroup()
   }
   
   # Check number of non-zero rows
   non_zero_rows <- data_to_model %>% 
-    filter(pmol_mg > 0) %>% 
+    filter(!!sym(response_var) > 0) %>% 
     nrow()
   
   # only proceed if number of non zero rows is above cutoff
@@ -5904,7 +5910,8 @@ mixedmodel_pre_post <- function(dataset, response_var, lipidclass, lipidcomposit
     if (!is.null(lipidcomposition) || length(unique(data_to_model$lipidComposition)) <= 1) {
       model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id)"))
     } else {
-      model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id) + (1 + time | lipidComposition)"))
+      #model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id) + (1 + time | lipidComposition)"))
+      model_formula <- as.formula(paste(response_var, "~ time * group + (1 | id)"))
     }
     
     # Try-catch block for model fitting
@@ -5984,8 +5991,8 @@ lipid_compositions <- unique_combinations$lipidComposition[!unique_combinations$
 # Order compositions correcty
 order(lipid_compositions)
 
-# # Run function for lipid composition
-# # PC.PE is not analysed as a composition, but only as class
+# Run function for lipid composition
+# PC.PE is not analysed as a composition, but only as class
 # result.lipid.pre_post.class_comp <- pmap(
 #   list(lipidClass = lipid_classes_per_comp,
 #        lipidComposition = lipid_compositions),
@@ -5999,21 +6006,22 @@ result.lipid.pre_post.class_comp.outlierRM <- pmap(
   ~ mixedmodel_pre_post(lipidomicsDF[lipidomicsDF$outlier == FALSE | is.na(lipidomicsDF$outlier),], "pmol_mg", ..1, ..2)
 )
 # Flatten to set  list names to first level
-#result.lipid.pre_post.class_comp <- flatten(result.lipid.pre_post.class_comp)
+# result.lipid.pre_post.class_comp <- flatten(result.lipid.pre_post.class_comp)
 result.lipid.pre_post.class_comp.outlierRM <- flatten(result.lipid.pre_post.class_comp.outlierRM)
+
 
 
 # # Use map to iterate over lipid classes
 # result.lipid.pre_post.class <- map(lipid_classes, ~ mixedmodel_pre_post(lipidomicsDF, "pmol_mg", .x))
 
 # With outliers removed - NB. imputed values could be used instead.
-result.lipid.pre_post.class.outlierRM <- map(lipid_classes, ~ mixedmodel_pre_post(lipidomicsDF[lipidomicsDF$outlier == FALSE | is.na(lipidomicsDF$outlier),], "pmol_mg", .x))
+result.lipid.pre_post.class.outlierRM <- map(lipid_classes, ~ mixedmodel_pre_post(lipidomicsDF[lipidomicsDF$outlier == FALSE | is.na(lipidomicsDF$outlier),], "pmol_mg_sum", .x))
 
 #result.lipid.pre_post.class <- flatten(result.lipid.pre_post.class)
 result.lipid.pre_post.class.outlierRM <- flatten(result.lipid.pre_post.class.outlierRM)
 ```
 
-## Mixed model - corrected
+## Mixed model - corrections
 ```{r}
 # Add sex to lipidomics DF
 if(! "gender" %in% colnames(lipidomicsDF)){
@@ -6541,8 +6549,6 @@ est_and_p_pvals_lipid_class.outlierRM <- prepare_lipid_data_for_plotting(result.
 
 ## !!! Publication plots
 ### Fig. 1: Classes
-TO DO
-- Make plot store plot objects -> Combine into a single plot
 ```{r}
 # Add sex to lipidomics DF
 if(! "gender" %in% colnames(lipidomicsDF)){
@@ -6552,7 +6558,7 @@ if(! "gender" %in% colnames(lipidomicsDF)){
 
 plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit, y_label_cutoff, y.labels, save_subfolder) {
   
-  print(lipid_class)
+  
   # Filter data based on lipid class and available time
   filtered_data <- lipidomicsDF %>%
     filter(lipidClass == lipid_class & !is.na(time))
@@ -6572,6 +6578,8 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit,
     group_by(group, time, lipidClass) %>%
     summarise(mean_class = mean(!!sym(unit), na.rm = TRUE), .groups = 'drop')
   
+  print(lipid_class)
+  print(mean_data_class)
   
   # Get p-values
   p_slope_DIWL_WLEX.num <- p_val_df[[lipid_class]]$slope_results[p_val_df[[lipid_class]]$slope_results$contrast =="Pre - Post : DIWL - WLEX", c("p.value")]
@@ -6780,14 +6788,15 @@ acylglycerole_row.1 <-
 
 Sphingolipids_row.1 <- list_of_plots[["Cer"]] | 
   list_of_plots[["dhCer"]] | 
-list_of_plots[["GluCer"]]
+list_of_plots[["SPH"]]
+
 #list_of_plots[["GalCer"]] | 
 
 Sphingolipids_row.2 <-
-  
-  list_of_plots[["LacCer"]] |
-  list_of_plots[["SPH"]] |
-  list_of_plots[["SPM"]] 
+  list_of_plots [["SPM"]] |
+  list_of_plots [["GluCer"]] |
+  list_of_plots[["LacCer"]]
+
 
 
 phospholipid_row.1 <-
@@ -6815,7 +6824,7 @@ lysophospholipids_row.2 <-
 acylcarnitine_row.1 <- list_of_plots[["AC"]]
 
 ratios_row.1 <-
-  list_of_plots[["Cer ratio"]] |
+  # list_of_plots[["Cer ratio"]] |
   list_of_plots[["PC.PE"]]
 
 # output device:
@@ -6886,7 +6895,7 @@ filename <- paste0(getwd(), "/outputs/figures/figure 1/", "lysophospholipids_2.s
 ggsave(filename, plot = plot_lyso2, device = device_out, width = 3, height = 3)
 
 
-plot_ac <- acylcarnitine_row.1 +
+plot_ac <- acylcarnitine_row.1 +  
   plot_annotation(tag_levels = list(c('A'))) &
   theme(
     plot.tag = element_text(size = 12),  # Adjust size as needed
@@ -6895,14 +6904,14 @@ plot_ac <- acylcarnitine_row.1 +
 filename <- paste0(getwd(), "/outputs/figures/figure 1/", "acylcarnitine.svg")
 ggsave(filename, plot = plot_ac, device = device_out, width = 2.5, height = 3)
 
-plot_ratios <- ratios_row.1 +
-  plot_annotation(tag_levels = 'A') &
-  theme(
-    plot.tag = element_text(size = 12),  # Adjust size as needed
-    plot.tag.position = c(0, .98)  # Adjust tag position
-  )
+plot_ratios <- ratios_row.1
+# +  plot_annotation(tag_levels = 'A') &
+#   theme(
+#     plot.tag = element_text(size = 12),  # Adjust size as needed
+#     plot.tag.position = c(0, .98)  # Adjust tag position
+#   )
 filename <- paste0(getwd(), "/outputs/figures/figure 1/", "ratios.svg")
-ggsave(filename, plot = plot_ratios, device = device_out, width = 4, height = 3)
+ggsave(filename, plot = plot_ratios, device = device_out, width = 2.5, height = 3)
 
 
 ```
@@ -7294,8 +7303,6 @@ heatmap_combined <- list()
 # Assuming 'matrices_rho$gr1' is your correlation matrix and 'matrices_p_adj_non$gr1' is your p-value matrix
 for (i in 1:length(lipids_groups)){
   
-  print("Plotting: ")
-  print(lipids_groups[[i]])
   
   hm_slope <- generate_heatmap(t(matrices_estimates[[i]][,3, drop = FALSE]),
                                t(matrices_pvals[[i]][,3, drop = FALSE]),
