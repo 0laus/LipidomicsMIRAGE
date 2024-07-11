@@ -793,7 +793,7 @@ glycemicControl <- c("rd_ss2kg_ffm_insulin_pre", "hgb_a1c_pre", "rd_ss2kg_ffm_in
 # Mitochondria
 mitochondria <- c("pcr_p_mrs_pre", "max_oxphos_pre", "pcr_p_mrs_post", "max_oxphos_post")
 
-bodycomposition <- c("bmi_pre", "percent_imat_pre", "bmi_post", "percent_imat_post")
+bodycomposition <- c("bmi_pre", "percent_imat_pre", "bmi_post", "percent_imat_post", "percent_fat_mass_pre", "percent_fat_mass_post")
 
 # Blood
 blood <- c("vldl_pre", "ldl_pre", "hdl_pre", "cholesterol_pre", "triglycerides_pre", "plasma_ffabg_pre")
@@ -5065,7 +5065,7 @@ corr_ordered$color <- color_mapping_common(corr_ordered$spearman_rho_all)
 
 plot <- ggplot(corr_ordered, aes(lipid, spearman_rho_all)) +
    geom_col(aes(fill = color), 
-            color = "black", size = 1) +
+            color = "black", linewidth = 1) +
   #geom_col(aes(fill = ifelse(significance == "", "grey", ifelse(spearman_rho_all > 0, "positive", "negative"))),
    #        color = "black", size = 1) +
   geom_text(aes(label = significance,
@@ -5100,8 +5100,9 @@ print(plot)
 clinical_var <- list(
   c("bmi_pre", bquote(bold("Body mass index")), .7),
   c("tdpa_pre", bquote(bold("Total daily physical activity")), .7),
-  c("rd_ss2kg_ffm_insulin_pre", bquote(bold("Rate of glucose disposal")), .7),
-  c("percent_imat_pre", bquote(bold("Thigh IMAT proportion")), .7),
+  c("rd_ss2kg_ffm_insulin_pre", bquote(bold("Glucose R"[d])), .7),
+  c("percent_fat_mass_pre", bquote(bold("Body fat")), .7),
+  c("percent_imat_pre", bquote(bold("Thigh IMAT")), .7),
   c("vo2kg_ffm_pre", bquote(bold(VO[2] ~ "per kg FFM")), .7),
   c("hgb_a1c_pre", bquote(bold("Hemoglobin A1c")), .7),
   c("pcr_p_mrs_pre", bquote("PCr recovery"), .7),
@@ -5111,7 +5112,8 @@ clinical_var <- list(
 clinical_var_post <- list(
   c("bmi_post", bquote(bold("Body mass index (post)")), .7),
   c("tdpa_post", bquote(bold("Total daily physical activity (post)")), .7),
-  c("rd_ss2kg_ffm_insulin_post", bquote(bold("Rate of glucose disposal (post)")), .7),
+  c("rd_ss2kg_ffm_insulin_post", bquote(bold("Glucose R"[d]~"(post)")), .7),
+  c("percent_fat_mass_post", bquote(bold("Body fat")), .7),
   c("percent_imat_post", bquote(bold("Thigh IMAT proportion (post)")), .7),
   c("vo2kg_ffm_post", bquote(bold(VO[2] ~ "per kg FFM (post)")), .7),
   c("hgb_a1c_post", bquote(bold("Hemoglobin A1c (post)")), .7),
@@ -5270,8 +5272,9 @@ lipids_groups <- list(
 clinical_var <- list(
   c("bmi_pre", bquote("Body mass index"), .7),
   c("tdpa_pre", bquote("Total daily physical activity"), .7),
-  c("rd_ss2kg_ffm_insulin_pre", bquote("Rate of glucose disposal"), .7),
-  c("percent_imat_pre", bquote("Thigh IMAT proportion"), .7),
+  c("rd_ss2kg_ffm_insulin_pre", bquote("Glucose R"[d]), .7),
+  c("percent_fat_mass_pre", bquote("Body fat %"), .7),
+  c("percent_imat_pre", bquote("Thigh IMAT %"), .7),
   c("vo2kg_ffm_pre", bquote(VO[2] ~ "per kg FFM"), .7),
   c("hgb_a1c_pre", bquote("Hemoglobin A1c"), .7),
   c("pcr_p_mrs_pre", bquote("PCr recovery"), .7),
@@ -5282,8 +5285,9 @@ clinical_var <- list(
 clinical_var_post <- list(
   c("bmi_post", bquote("Body mass index (post)"), .7),
   c("tdpa_post", bquote("Total daily physical activity (post)"), .7),
-  c("rd_ss2kg_ffm_insulin_post", bquote("Rate of glucose disposal (post)"), .7),
-  c("percent_imat_post", bquote("Thigh IMAT proportion (post)"), .7),
+  c("rd_ss2kg_ffm_insulin_post", bquote("Glucose R"[d]~"(post)"), .7),
+  c("percent_fat_mass_post", bquote("Body fat % (post)"), .7),
+  c("percent_imat_post", bquote("Thigh IMAT % (post)"), .7),
   c("vo2kg_ffm_post", bquote(VO[2] ~ "per kg FFM (post)"), .7),
   c("hgb_a1c_post", bquote("Hemoglobin A1c (post)"), .7),
   c("pcr_p_mrs_post", bquote("PCr recovery (post)"), .7),
@@ -5462,18 +5466,20 @@ ggsave(paste0(getwd(), "/outputs/figures/baseline correlations/grid_plots_classe
 
 # Selected clinical  
 clinical_vars <- list(
-  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Rate of glucose disposal")), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
+  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Glucose R"[d])), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
   c("hgb_a1c_pre", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle( "%"))))),
   c("vo2kg_ffm_pre", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle( "ml · kgFFM"^{-1}))))),
   c("tdpa_pre", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle( "min · day"^{-1}))))),
   c("bmi_pre", bquote(atop(NA, atop(textstyle(bold(BMI)), textstyle( "kg · m"^{2}))))),
-  c("percent_imat_pre", bquote(atop(NA, atop(textstyle(bold("Thigh IMAT")), textstyle( "%"))))),
-  c("max_oxphos_pre", bquote(atop(NA, atop(textstyle(bold("Max ox phosphorylation")), textstyle("pmol O"[2] ~ "· sec"^{-1} ~ "· mg"^{-1}))))),
-  c("pcr_p_mrs_pre", bquote(atop(NA, atop(textstyle(bold(PCr ~ recovery ~ tau)), textstyle( "s")))))
+  c("percent_fat_mass_pre", bquote(atop(NA, atop(textstyle(bold("Fat mass")), textstyle( "%"))))),
+  c("percent_imat_pre", bquote(atop(NA, atop(textstyle(bold("Thigh IMAT")), textstyle( "%")))))
+  
+  #c("max_oxphos_pre", bquote(atop(NA, atop(textstyle(bold("Max ox phosphorylation")), textstyle("pmol O"[2] ~ "· sec"^{-1} ~ "· mg"^{-1}))))),
+  #c("pcr_p_mrs_pre", bquote(atop(NA, atop(textstyle(bold(PCr ~ recovery ~ tau)), textstyle( "s")))))
 )
 
 clinical_vars_post <- list(
-  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Rate of glucose disposal")), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
+  c("rd_ss2kg_ffm_insulin_pre", bquote(atop(NA, atop(textstyle(bold("Glucose R"[d])), textstyle( "mg ·(min·kgFFM·ins)"^{-1}))))),
   c("hgb_a1c_pre", bquote(atop(NA, atop(textstyle(bold(HbA1c)), textstyle( "%"))))),
   c("vo2kg_ffm_pre", bquote(atop(NA, atop(textstyle(bold(VO[2] * " peak")), textstyle( "ml · kgFFM"^{-1}))))),
   c("tdpa_pre", bquote(atop(NA, atop(textstyle(bold("Physical activity")), textstyle( "min · day"^{-1}))))),
@@ -6578,7 +6584,7 @@ plot_lipid_class <- function(lipidomicsDF, lipid_class, p_val_df, unit, y_limit,
     group_by(group, time, lipidClass) %>%
     summarise(mean_class = mean(!!sym(unit), na.rm = TRUE), .groups = 'drop')
   
-  print(lipid_class)
+  print( paste0("LIPID CLASS: ", lipid_class))
   print(mean_data_class)
   
   # Get p-values
@@ -6811,9 +6817,9 @@ phospholipid_row.2 <-
 
 
 lysophospholipids_row.1 <-
-  list_of_plots[["LPE"]] |
+  list_of_plots[["LPG"]] |
   list_of_plots[["LPC"]] | 
-  list_of_plots[["LPG"]]
+  list_of_plots[["LPE"]]
   
 
 lysophospholipids_row.2 <-
@@ -7302,6 +7308,9 @@ heatmap_combined <- list()
 
 # Assuming 'matrices_rho$gr1' is your correlation matrix and 'matrices_p_adj_non$gr1' is your p-value matrix
 for (i in 1:length(lipids_groups)){
+  
+  print("Plotting: ")
+  print(lipids_groups[[i]])
   
   
   hm_slope <- generate_heatmap(t(matrices_estimates[[i]][,3, drop = FALSE]),
