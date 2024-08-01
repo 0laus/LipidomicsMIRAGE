@@ -2910,6 +2910,7 @@ mirage_included <- mirage_data %>%
     lean_mass_dxa_change = (lean_mass_dxa_post - lean_mass_dxa_pre) / lean_mass_dxa_pre * 100,
     age_change = (age_post - age_pre) / age_pre * 100,
     thigh_muscle_g_change = (thigh_muscle_g_post - thigh_muscle_g_pre) / thigh_muscle_g_pre * 100,
+    thigh_imat_g_change = (thigh_imat_g_post - thigh_imat_g_pre) / thigh_imat_g_pre * 100,
     percent_imat_change = (percent_imat_post - percent_imat_pre) / percent_imat_pre * 100,
     triglycerides_change = (triglycerides_post - triglycerides_pre) / triglycerides_pre * 100,
     
@@ -2938,7 +2939,7 @@ label(mirage_included$age_pre) <- "Age"
 label(mirage_included$weight_pre) <- "Weight"
 label(mirage_included$bmi_pre) <- "BMI"
 label(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "ᵃ Glucose R<sub>d</sub><br/>"
-label(mirage_included$tdpa_pre) <- "ᵇ Physical activity"
+label(mirage_included$tdpa_pre) <- "ᶜ Physical activity"
 label(mirage_included$hgb_a1c_pre) <- "HbA1c"
 label(mirage_included$cholesterol_pre) <- "Total cholesterol"
 label(mirage_included$ldl_pre) <- "LDL cholesterol"
@@ -2946,7 +2947,8 @@ label(mirage_included$hdl_pre) <- "HDL cholesterol"
 label(mirage_included$t2d_status) <- "Type 2-diabetes"
 label(mirage_included$fat_mass_dxa_pre) <- "Fat mass"
 label(mirage_included$lean_mass_dxa_pre) <- "Lean mass"
-label(mirage_included$thigh_muscle_g_pre) <- "Thigh muscle"
+label(mirage_included$thigh_muscle_g_pre) <- "ᵇ Thigh muscle"
+label(mirage_included$thigh_imat_g_pre) <- "ᵇ Thigh IMAT"
 label(mirage_included$percent_imat_pre) <- "ᵃThigh IMAT"
 label(mirage_included$vo2kg_ffm_pre) <- "VO₂ peak"
 label(mirage_included$triglycerides_pre) <- "Triglycerides"
@@ -2967,6 +2969,7 @@ units(mirage_included$t2d_status)  # T2D status might be categorical (e.g., Yes/
 units(mirage_included$fat_mass_dxa_pre) <- "kg"  # Fat mass typically measured in kilograms
 units(mirage_included$lean_mass_dxa_pre) <- "kg"  # Lean mass typically measured in kilograms
 units(mirage_included$thigh_muscle_g_pre) <- "g"
+units(mirage_included$thigh_imat_g_pre) <- "g"
 units(mirage_included$percent_imat_pre) <- "%"
 units(mirage_included$vo2kg_ffm_pre) <- "ml/kgFFM"
 units(mirage_included$triglycerides_pre) <- "mmol/l"
@@ -2975,8 +2978,9 @@ units(mirage_included$triglycerides_pre) <- "mmol/l"
 
 # Footnote
 footnote <-paste0 ("ᵃ Rate of glucose disposal (R<sub>d</sub>) normalized to fat-free mass and blood insulin<br/>", # <br/> used as linebreak for html table
+                   "ᵇ Values obtained from magnetic resonance imaging n: DIWL = 6, WLEX = 11, HED = 8<br/>",
                    # "ᵇ Intramuscular adipose tissue<br/>",
-                   "ᵇ Minutes of daily physical activity above 1.5 metabolic equivalent of task (MET)")
+                   "ᶜ Minutes of daily physical activity above 1.5 metabolic equivalent of task (MET)")
 
 
 # Define a custom render function
@@ -3145,10 +3149,21 @@ mean_sd_change <- sprintf("<i>%.1f (%.1f)", MEAN_stats_change_rounded, SD_stats_
 
 
 # Generate the table with custom rendering for weight
-result_table <- table1(~ + age_pre + sex_0_male_1_female  + t2d_status + rd_ss2kg_ffm_insulin_pre + hgb_a1c_pre + 
-                         bmi_pre + weight_pre + 
-                         fat_mass_dxa_pre + lean_mass_dxa_pre + vo2kg_ffm_pre + tdpa_pre +
-                          + triglycerides_pre + cholesterol_pre + ldl_pre + hdl_pre | group,
+result_table <- table1(~ + age_pre +
+                         sex_0_male_1_female  +
+                         t2d_status + rd_ss2kg_ffm_insulin_pre +
+                         hgb_a1c_pre + 
+                         bmi_pre +
+                         weight_pre + 
+                         fat_mass_dxa_pre +
+                         lean_mass_dxa_pre +
+                         thigh_imat_g_pre +
+                         thigh_muscle_g_pre +
+                         vo2kg_ffm_pre +
+                         tdpa_pre +
+                         triglycerides_pre +
+                         cholesterol_pre + ldl_pre +
+                         hdl_pre | group,
                        data = mirage_included,
                        render = custom_render,
                        footnote = footnote,
@@ -6795,7 +6810,7 @@ y.lims <- list("TAG" = c(0, 190 ,200),
                "SPM" = c(0, 2800, 2000),
                "Cer ratio" = c(0, .65, .65),
                "PC.PE" = c(0, 4.5, 4.5),
-               "LPC.PC" = c(0, 4.5, 4.5)
+               "LPC.PC" = c(0, .11, .11)
                
 )
 
@@ -6830,7 +6845,7 @@ y.labels <- list(
   "PI" = bquote("Phosphatidylinositol (pmol · mg"^-1*")"),
   "PS" = bquote("Phosphatidylserine (pmol · mg"^-1*")"),
   
-  "PC.PE" = bquote("Phosphatidylcholine / phophoethanolamine")
+  "PC.PE" = bquote("Phosphatidylcholine / phophoethanolamine"),
   "LPC.PC" = bquote("Lysophosphatidylcholine / phophatidylcholine")
 )
 
@@ -6980,14 +6995,14 @@ plot_ac <- acylcarnitine_row.1 +
 filename <- paste0(getwd(), "/outputs/figures/figure 1/", "acylcarnitine.svg")
 ggsave(filename, plot = plot_ac, device = device_out, width = 2.5, height = 3)
 
-plot_ratios <- ratios_row.1
-# +  plot_annotation(tag_levels = 'A') &
-#   theme(
-#     plot.tag = element_text(size = 12),  # Adjust size as needed
-#     plot.tag.position = c(0, .98)  # Adjust tag position
-#   )
+plot_ratios <- ratios_row.1 +
+  plot_annotation(tag_levels = 'A') &
+  theme(
+    plot.tag = element_text(size = 12),  # Adjust size as needed
+    plot.tag.position = c(0, .98)  # Adjust tag position
+  )
 filename <- paste0(getwd(), "/outputs/figures/figure 1/", "ratios.svg")
-ggsave(filename, plot = plot_ratios, device = device_out, width = 2.5, height = 3)
+ggsave(filename, plot = plot_ratios, device = device_out, width = 3, height = 3)
 
 
 ```
