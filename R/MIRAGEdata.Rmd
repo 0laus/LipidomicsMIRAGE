@@ -2354,6 +2354,122 @@ for (i in seq_along(mirage_crossSectional_vars)) {
 
 ```
 
+
+# Within mirage, pre-post changes
+```{r}
+  ##### HOW MUCH OF WEIGHT LOSS IS FAT LOSS
+  # Turn MIRAGE data into long format to be able to plot data
+  # Combine all variables of interest
+  endpoint_variable <- c("weight_pre", "weight_post", "fat_mass_dxa_pre", "fat_mass_dxa_post")
+
+  subset_variables <- c("id", "group", "gender", endpoint_variable)
+  
+  # Rename the endpoint variable to match the name in long format 
+  endpoint_variable <- gsub("_pre", "", endpoint_variable[1])
+  
+  # Subset 'mirage_data' to include only the variables of interest
+  mirage_subset <- mirage_data[, subset_variables]
+  
+    # Create the new column 'in_lipidomics' based on 'id' existence in lipidomicsDF
+  mirage_subset <- mirage_subset %>%
+    mutate(in_lipidomics = if_else(id %in% lipidomicsDF$id, TRUE, FALSE))
+  
+  
+  # Calculate the differences and fat_loss_percent
+mirage_subset <- mirage_subset %>%
+  mutate(
+    weight_loss = weight_pre - weight_post,
+    fat_loss = fat_mass_dxa_pre - fat_mass_dxa_post,
+    fat_loss_percent = fat_loss / weight_loss * 100
+  )
+
+View(mirage_subset)
+
+# Calculate mean and standard deviation for each group
+summary_stats <- mirage_subset %>%
+  group_by(group) %>%
+  filter(in_lipidomics == TRUE) %>% 
+  summarize(
+    mean_fat_loss_percent = mean(fat_loss_percent, na.rm = TRUE),
+    sd_fat_loss_percent = sd(fat_loss_percent, na.rm = TRUE)
+  )
+
+# View the results
+summary_stats
+  
+  
+  # Transform 'mirage_data_subset' to long format
+  mirage_plot_long <- pivot_longer(
+    mirage_subset,
+    cols = -c(id, group, gender),  # exclude cols from the pivot
+    names_to = c(".value", "time"),
+    names_pattern = "(.+)_(pre|post)"
+  )
+  
+  ### Make a column called in_lipidomics to filter out values that are present in that dataset
+  # Make id columns strings to be able to search
+  mirage_plot_long$id <- as.character(mirage_plot_long$id)
+  lipidomicsDF$id <- as.character(lipidomicsDF$id)
+  
+  # Create the new column 'in_lipidomics' based on 'id' existence in lipidomicsDF
+  mirage_plot_long <- mirage_plot_long %>%
+    mutate(in_lipidomics = if_else(id %in% lipidomicsDF$id, TRUE, FALSE))
+  
+  
+  # Adjust the 'time' column in 'mirage_data_long_ch' to match 'Pre' and 'Post'
+  mirage_plot_long <- mirage_plot_long %>%
+    mutate(time = case_when(
+      time == "pre" ~ "Pre",
+      time == "post" ~ "Post",
+      TRUE ~ time # Keeps the original value if it's neither 'pre' nor 'post'
+    ))
+  
+  
+  
+  
+  ##### VO2 / kg / min
+   # Turn MIRAGE data into long format to be able to plot data
+  # Combine all variables of interest
+  endpoint_variable <- c("vo2abs_pre", "vo2abs_post", "weight_pre", "weight_post")
+
+  subset_variables <- c("id", "group", "gender", endpoint_variable)
+  
+  # Rename the endpoint variable to match the name in long format 
+  endpoint_variable <- gsub("_pre", "", endpoint_variable[1])
+  
+  # Subset 'mirage_data' to include only the variables of interest
+  mirage_subset <- mirage_data[, subset_variables]
+  
+    # Create the new column 'in_lipidomics' based on 'id' existence in lipidomicsDF
+  mirage_subset <- mirage_subset %>%
+    mutate(in_lipidomics = if_else(id %in% lipidomicsDF$id, TRUE, FALSE))
+  
+  
+  # Calculate the differences and fat_loss_percent
+mirage_subset <- mirage_subset %>%
+  mutate(
+    vo2_kg_pre = vo2abs_pre / weight_pre * 1000,
+    vo2_kg_post = vo2abs_post / weight_post * 1000,
+  )
+
+View(mirage_subset)
+
+# Calculate mean and standard deviation for each group
+summary_stats <- mirage_subset %>%
+  group_by(group) %>%
+  filter(in_lipidomics == TRUE) %>% 
+  summarize(
+    mean_vo2_kg_pre = mean(vo2_kg_pre, na.rm = TRUE),
+    sd_vo2_kg_pre = sd(vo2_kg_pre, na.rm = TRUE)
+  )
+
+# View the results
+summary_stats
+  
+  
+```
+
+
 # Mirage pre-post analysis w plot
 ```{r}
 ## Make function for the analysis
@@ -2785,7 +2901,7 @@ print(plot)
 
 ```
 
-# Table 1 
+# Table 1 - pre, post rows
 ```{r}
 ####### Function to calculate p-values #########
 pvalue <- function(x, name) {
@@ -2814,6 +2930,8 @@ pvalue <- function(x, name) {
     
     # Make a dataframe with relevant columns
     data <- mirage_included[c("id", "group", name, name_post)]
+    
+
     
   if (is.numeric(y)) {  
    ### Old code
@@ -2944,7 +3062,7 @@ label(mirage_included$hgb_a1c_pre) <- "HbA1c"
 label(mirage_included$cholesterol_pre) <- "Total cholesterol"
 label(mirage_included$ldl_pre) <- "LDL cholesterol"
 label(mirage_included$hdl_pre) <- "HDL cholesterol"
-label(mirage_included$t2d_status) <- "Type 2-diabetes"
+label(mirage_included$t2d_status) <- "Type 2 diabetes"
 label(mirage_included$fat_mass_dxa_pre) <- "Fat mass"
 label(mirage_included$lean_mass_dxa_pre) <- "Lean mass"
 label(mirage_included$thigh_muscle_g_pre) <- "ᵇ Thigh muscle"
@@ -2962,22 +3080,22 @@ units(mirage_included$bmi_pre) <- "kg/m"
 units(mirage_included$rd_ss2kg_ffm_insulin_pre) <- "(mg/kgFFM/min)/insulin"
 units(mirage_included$tdpa_pre) <- "min"
 units(mirage_included$hgb_a1c_pre) <- "%"
-units(mirage_included$cholesterol_pre) <- "mmol/l" 
-units(mirage_included$ldl_pre) <- "mmol/l"  
-units(mirage_included$hdl_pre) <- "mmol/l"  
+units(mirage_included$cholesterol_pre) <- "mmol/L" 
+units(mirage_included$ldl_pre) <- "mmol/L"  
+units(mirage_included$hdl_pre) <- "mmol/L"
 units(mirage_included$t2d_status)  # T2D status might be categorical (e.g., Yes/No, 0/1)
 units(mirage_included$fat_mass_dxa_pre) <- "kg"  # Fat mass typically measured in kilograms
 units(mirage_included$lean_mass_dxa_pre) <- "kg"  # Lean mass typically measured in kilograms
 units(mirage_included$thigh_muscle_g_pre) <- "g"
 units(mirage_included$thigh_imat_g_pre) <- "g"
 units(mirage_included$percent_imat_pre) <- "%"
-units(mirage_included$vo2kg_ffm_pre) <- "ml/kgFFM"
-units(mirage_included$triglycerides_pre) <- "mmol/l"
+units(mirage_included$vo2kg_ffm_pre) <- "mL/kgFFM"
+units(mirage_included$triglycerides_pre) <- "mmol/L"
 
 
 
 # Footnote
-footnote <-paste0 ("ᵃ Rate of glucose disposal (R<sub>d</sub>) normalized to fat-free mass and blood insulin<br/>", # <br/> used as linebreak for html table
+footnote <-paste0 ("ᵃ Rate of glucose disposal (R<sub>d</sub>) normalized to fat-free mass and blood insulin. n: DIWL = 9, WLEX = 8, HED = 7<br/>", # <br/> used as linebreak for html table
                    "ᵇ Values obtained from magnetic resonance imaging n: DIWL = 6, WLEX = 11, HED = 8<br/>",
                    # "ᵇ Intramuscular adipose tissue<br/>",
                    "ᶜ Minutes of daily physical activity above 1.5 metabolic equivalent of task (MET)")
@@ -3804,11 +3922,11 @@ if (is.na(hm_matrix[i, j])) {
   grid.rect(unit(x, "npc"), unit(y, "npc"), width, height, gp = gpar(fill = "grey", col = NA))
 } else if (!is.na(p_val_matrix[i, j])) {
   if (p_val_matrix[i, j] < pLims$p1) {
-    grid.text("*\n*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
+    grid.text("*\n*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.07, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
   } else if (p_val_matrix[i, j] < pLims$p2) {
-    grid.text("*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
+    grid.text("*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.07, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
   } else if (p_val_matrix[i, j] < pLims$p3) {
-    grid.text("*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
+    grid.text("*", unit(x, "npc"), unit(y, "npc") - unit(0.07, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
                   }
             }
           })
@@ -5184,7 +5302,7 @@ print(plot)
 # Define clinical var c(var_name, plot_title, x-lim)
 clinical_var <- list(
   c("bmi_pre", bquote(bold("Body mass index")), .7),
-  c("tdpa_pre", bquote(bold("Total daily physical activity")), .7),
+  c("tdpa_pre", bquote(bold("Daily physical activity")), .7),
   c("rd_ss2kg_ffm_insulin_pre", bquote(bold("Glucose R"[d])), .7),
   c("percent_fat_mass_pre", bquote(bold("Body fat proportion")), .7),
   c("percent_imat_pre", bquote(bold("Thigh IMAT proportion")), .7),
@@ -5197,7 +5315,7 @@ clinical_var <- list(
 
 clinical_var_post <- list(
   c("bmi_post", bquote(bold("Body mass index (post)")), .7),
-  c("tdpa_post", bquote(bold("Total daily physical activity (post)")), .7),
+  c("tdpa_post", bquote(bold("Daily physical activity (post)")), .7),
   c("rd_ss2kg_ffm_insulin_post", bquote(bold("Glucose R"[d]~"(post)")), .7),
   c("percent_fat_mass_post", bquote(bold("Body fat proportion")), .7),
   c("percent_imat_post", bquote(bold("Thigh IMAT proportion (post)")), .7),
@@ -5292,11 +5410,11 @@ if (is.na(hm_matrix[i, j])) {
   grid.rect(unit(x, "npc"), unit(y, "npc"), width, height, gp = gpar(fill = "grey", col = NA))
 } else if (!is.na(p_val_matrix[i, j])) {
   if (p_val_matrix[i, j] < pLims$p1) {
-    grid.text("*\n*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
+    grid.text("*\n*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.07, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
   } else if (p_val_matrix[i, j] < pLims$p2) {
-    grid.text("*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
+    grid.text("*\n*", unit(x, "npc"), unit(y, "npc") - unit(0.07, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
   } else if (p_val_matrix[i, j] < pLims$p3) {
-    grid.text("*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
+    grid.text("*", unit(x, "npc"), unit(y, "npc") - unit(0.07, "npc"), gp = gpar(col = "black", fontsize = 5, fontface = "bold", lineheight = 0.4), just = "center")
                   }
             }
           })
@@ -6109,7 +6227,7 @@ result.lipid.pre_post.class.outlierRM <- map(lipid_classes, ~ mixedmodel_pre_pos
 result.lipid.pre_post.class.outlierRM <- flatten(result.lipid.pre_post.class.outlierRM)
 ```
 
-## Mixed model - corrections
+## Mixed model adjusted for sex
 ```{r}
 # Add sex to lipidomics DF
 if(! "gender" %in% colnames(lipidomicsDF)){
@@ -6815,38 +6933,38 @@ y.lims <- list("TAG" = c(0, 190 ,200),
 )
 
 y.labels <- list(
-  "TAG" = bquote("Triacylglycerol (nmol · mg"^-1*")"),
-  "1,2-DG" = bquote("1,2-diacylglycerol (pmol · mg"^-1*")"),
-  "1,3-DG" = bquote("1,3-diacylglycerol (pmol · mg"^-1*")"),
+  "TAG" = bquote("Triacylglycerol (nmol · mg dry wt"^-1*")"),
+  "1,2-DG" = bquote("1,2-diacylglycerol (pmol · mg dry wt"^-1*")"),
+  "1,3-DG" = bquote("1,3-diacylglycerol (pmol · mg dry wt"^-1*")"),
   
-  "AC" = bquote("Acylcarnitine (pmol · mg"^-1*")"),
+  "AC" = bquote("Acylcarnitine (pmol · mg dry wt"^-1*")"),
   
-  "Cer" = bquote("Ceramide (pmol · mg"^-1*")"),
+  "Cer" = bquote("Ceramide (pmol · mg dry wt"^-1*")"),
   "Cer ratio" = bquote("Ceramide 16:0 / ceramide 24:0"),
-  "dhCer" = bquote("Dihydroceramide (pmol · mg"^-1*")"),
+  "dhCer" = bquote("Dihydroceramide (pmol · mg dry wt"^-1*")"),
   
-  "GluCer" = bquote("Glucosylceramide (pmol · mg"^-1*")"),
-  "LacCer" = bquote("Lactosylceramide (pmol · mg"^-1*")"),
-  "SPH" = bquote("Sphingosine (pmol · mg"^-1*")"),
-  "SPM" = bquote("Sphingomyelin (pmol · mg"^-1*")"),
+  "GluCer" = bquote("Glucosylceramide (pmol · mg dry wt"^-1*")"),
+  "LacCer" = bquote("Lactosylceramide (pmol · mg dry wt"^-1*")"),
+  "SPH" = bquote("Sphingosine (pmol · mg dry wt"^-1*")"),
+  "SPM" = bquote("Sphingomyelin (pmol · mg dry wt"^-1*")"),
   
-  "GalCer" = bquote("Galactosylceramide (pmol · mg"^-1*")"),
+  "GalCer" = bquote("Galactosylceramide (pmol · mg dry wt"^-1*")"),
   
   
-  "LPC" = bquote("Lysophosphatidylcholine (pmol · mg"^-1*")"),
-  "LPE" = bquote("Lysophosphatidylethanolamine (pmol · mg"^-1*")"),
-  "LPG" = bquote("Lysophosphatidylglycerol (pmol · mg"^-1*")"),
-  "LPI" = bquote("Lysophosphatidylinositol (pmol · mg"^-1*")"),
-  "LPS" = bquote("Lysophosphatidylserine (pmol · mg"^-1*")"),
-  "PA" = bquote("Phosphatidic acid (pmol · mg"^-1*")"),
-  "PC" = bquote("Phosphatidylcholine (nmol · mg"^-1*")"),
-  "PE" = bquote("Phosphatidylethanolamine (nmol · mg"^-1*")"),
-  "PG" = bquote("Phosphatidylglycerol (pmol · mg"^-1*")"),
-  "PI" = bquote("Phosphatidylinositol (pmol · mg"^-1*")"),
-  "PS" = bquote("Phosphatidylserine (pmol · mg"^-1*")"),
+  "LPC" = bquote("Lysophosphatidylcholine (pmol · mg dry wt"^-1*")"),
+  "LPE" = bquote("Lysophosphatidylethanolamine (pmol · mg dry wt"^-1*")"),
+  "LPG" = bquote("Lysophosphatidylglycerol (pmol · mg dry wt"^-1*")"),
+  "LPI" = bquote("Lysophosphatidylinositol (pmol · mg dry wt"^-1*")"),
+  "LPS" = bquote("Lysophosphatidylserine (pmol · mg dry wt"^-1*")"),
+  "PA" = bquote("Phosphatidic acid (pmol · mg dry wt"^-1*")"),
+  "PC" = bquote("Phosphatidylcholine (nmol · mg dry wt"^-1*")"),
+  "PE" = bquote("Phosphatidylethanolamine (nmol · mg dry wt"^-1*")"),
+  "PG" = bquote("Phosphatidylglycerol (pmol · mg dry wt"^-1*")"),
+  "PI" = bquote("Phosphatidylinositol (pmol · mg dry wt"^-1*")"),
+  "PS" = bquote("Phosphatidylserine (pmol · mg dry wt"^-1*")"),
   
-  "PC.PE" = bquote("Phosphatidylcholine / phophoethanolamine"),
-  "LPC.PC" = bquote("Lysophosphatidylcholine / phophatidylcholine")
+  "PC.PE" = bquote("Phosphatidylcholine / phosphoethanolamine"),
+  "LPC.PC" = bquote("Lysophosphatidylcholine / phosphatidylcholine")
 )
 
 
@@ -7002,7 +7120,7 @@ plot_ratios <- ratios_row.1 +
     plot.tag.position = c(0, .98)  # Adjust tag position
   )
 filename <- paste0(getwd(), "/outputs/figures/figure 1/", "ratios.svg")
-ggsave(filename, plot = plot_ratios, device = device_out, width = 3, height = 3)
+ggsave(filename, plot = plot_ratios, device = device_out, width = 4, height = 3)
 
 
 ```
@@ -7012,10 +7130,18 @@ ggsave(filename, plot = plot_ratios, device = device_out, width = 3, height = 3)
 ```{r}
 ### Data prepare
 # When class and composition is analysed together, merge p-values and correlations
-pvals_df <- est_and_p_lipid_comp.outlierRM$p.vals
-estimates_df <- est_and_p_lipid_comp.outlierRM$estimates
+pvals_df <- rbind(
+  est_and_p_lipid_comp.outlierRM$p.vals,
+  est_and_p_pvals_lipid_class.outlierRM$p.vals
+)
 
-pvals_df_sorted <- pvals_df[order(pvals_df$lipid), ]
+estimates_df <- rbind(
+  est_and_p_lipid_comp.outlierRM$estimates,
+  est_and_p_pvals_lipid_class.outlierRM$estimates
+)
+
+pvals_df <- pvals_df[order(pvals_df$lipid), ]
+estimates_df <- estimates_df[order(estimates_df$lipid), ]
 
 # Select the specified columns for hm_data.p-vals matrix
 pvals_df <- pvals_df[ , c("lipid", "Pre HED - Post HED (corrected)", "Pre DIWL - Post DIWL (corrected)", 
@@ -7036,14 +7162,18 @@ log2fold_ch_comp <- lipidomicsDF %>%
     .groups = "drop"
   )
 
-# # Class
-# log2fold_ch_class <- lipidomicsDF %>%
-#   group_by(lipidClass, group) %>%
-#   summarize(
-#     log2fCh = log2(mean(pmol_mg_imp[time == "Post"], na.rm = TRUE) / 
-#                           mean(pmol_mg_imp[time == "Pre"], na.rm = TRUE)),
-#     .groups = "drop"
-#   )
+# Class
+log2fold_ch_class <- lipidomicsDF %>%
+  filter(outlier == FALSE | is.na(outlier)) %>%
+  group_by(lipidClass, group) %>%
+  summarize(
+    log2fCh = log2(mean(pmol_mg[time == "Post"], na.rm = TRUE) / 
+                     mean(pmol_mg[time == "Pre"], na.rm = TRUE)),
+    percent_change = (mean(pmol_mg[time == "Post"], na.rm = TRUE) - 
+                        mean(pmol_mg[time == "Pre"], na.rm = TRUE)) / 
+      mean(pmol_mg[time == "Pre"], na.rm = TRUE) * 100,
+    .groups = "drop"
+  )
 
 # Make names to match lipid
 # Composition
@@ -7052,11 +7182,11 @@ log2fold_ch_comp <- log2fold_ch_comp %>%
   select(-lipidComposition, -lipidClass)
 
 # # Class
-# log2fold_ch_class <- log2fold_ch_class %>%
-#   rename(lipid = lipidClass)
+log2fold_ch_class <- log2fold_ch_class %>%
+  rename(lipid = lipidClass)
 
 # Combine lipid composition and lipid class data
-log2fold_ch <- log2fold_ch_comp  #rbind(log2fold_ch_class, log2fold_ch_comp)
+log2fold_ch <- rbind(log2fold_ch_class, log2fold_ch_comp)
 
 # Rename col names to match the ones on the DF
 log2fold_ch <- log2fold_ch %>%
@@ -7113,16 +7243,16 @@ slope_norm_ch_comp <- lipidomicsDF %>%
       mean(pmol_mg_pre_mean_comp[time == "Pre"], na.rm = TRUE),
     .groups = "drop"
   )
-# 
-# # Class
-# slope_norm_ch_class <- lipidomicsDF %>%
-#   group_by(lipidClass, group) %>%
-#   summarize(
-#     norm_ch = (mean(pmol_mg_imp[time == "Post"], na.rm = TRUE) - 
-#       mean(pmol_mg_imp[time == "Pre"], na.rm = TRUE)) / 
-#       mean(pmol_mg_pre_mean_class[time == "Pre"], na.rm = TRUE),
-#     .groups = "drop"
-#   )
+
+# Class
+slope_norm_ch_class <- lipidomicsDF %>%
+  group_by(lipidClass, group) %>%
+  summarize(
+    norm_ch = (mean(pmol_mg_imp[time == "Post"], na.rm = TRUE) -
+      mean(pmol_mg_imp[time == "Pre"], na.rm = TRUE)) /
+      mean(pmol_mg_pre_mean_class[time == "Pre"], na.rm = TRUE),
+    .groups = "drop"
+  )
 
 # Make single lipid name for later matching
 # Composition
@@ -7130,12 +7260,12 @@ slope_norm_ch_comp <- slope_norm_ch_comp %>%
   mutate(lipid = paste(lipidClass, lipidComposition, sep = "_")) %>%
   select(-lipidComposition, -lipidClass)
 
-# # Class
-# slope_norm_ch_class <- slope_norm_ch_class %>%
-#   rename(lipid = lipidClass)
+# Class
+slope_norm_ch_class <- slope_norm_ch_class %>%
+  rename(lipid = lipidClass)
 
 # Combine lipid composition and lipid class data
-slope_norm_ch <- slope_norm_ch_comp  #rbind(slope_norm_ch_class, slope_norm_ch_comp)
+slope_norm_ch <- rbind(slope_norm_ch_class, slope_norm_ch_comp)
 
 # Spread the data for each group to be a separate column
 slope_norm_ch_wide <- slope_norm_ch %>%
@@ -7174,7 +7304,8 @@ pvals_df <- pvals_df %>%
     `lipid`,
     `Pre DIWL - Post DIWL (corrected)`,
     `Pre WLEX - Post WLEX (corrected)`,
-    `Pre - Post : DIWL - WLEX (corrected)`
+    `Pre - Post : DIWL - WLEX (corrected)`,
+    `Pre HED - Post HED (corrected)`
   )
 
 estimates_df_plotData <- estimates_df_plotData %>% 
@@ -7182,7 +7313,8 @@ estimates_df_plotData <- estimates_df_plotData %>%
     `lipid`,
     `Pre DIWL - Post DIWL`,
     `Pre WLEX - Post WLEX`,
-    `Pre - Post : DIWL - WLEX`
+    `Pre - Post : DIWL - WLEX`,
+    `Pre HED - Post HED`
   )
 
 # Rename columns 
@@ -7190,7 +7322,8 @@ estimates_df_plotData <- estimates_df_plotData %>%
   rename(
     `group DIWL` = `Pre DIWL - Post DIWL`,
     `group WLEX` = `Pre WLEX - Post WLEX`,
-    `DIWL vs WLEX` = `Pre - Post : DIWL - WLEX`
+    `DIWL vs WLEX` = `Pre - Post : DIWL - WLEX`,
+    `group HED` = `Pre HED - Post HED`
   )
 
 # Rename columns 
@@ -7198,7 +7331,8 @@ pvals_df <- pvals_df %>%
   rename(
     `group DIWL` = `Pre DIWL - Post DIWL (corrected)`,
     `group WLEX` = `Pre WLEX - Post WLEX (corrected)`,
-    `DIWL vs WLEX` = `Pre - Post : DIWL - WLEX (corrected)`
+    `DIWL vs WLEX` = `Pre - Post : DIWL - WLEX (corrected)`,
+    `group HED` = `Pre HED - Post HED (corrected)`,
   )
 
 ```
@@ -7231,21 +7365,26 @@ lipids_groups <- list(
   gr_1_2_dg = c("1,2-DG"),
   gr_1_3_dg = c("1,3-DG"),
   gr_ac = c("AC"),
+  
   gr_cer = c("Cer"),
   gr_cer_ratio = c("Cer ratio"),
   gr_dhcer = c("dhCer"),
+  
   gr_glucer = c("GluCer"),
   gr_laccer = c("LacCer"),
   gr_sph = c("SPH"),
   gr_spm = c("SPM"),
+  
   gr_pc = c("PC"),
   gr_pe = c("PE"),
   gr_pc_pe = c("PC.PE"),
-  gr_pc_pe = c("LPC.PC"),
+  gr_lpc_pe = c("LPC.PC"),
+  
   gr_pa = c("PA"),
   gr_pg = c("PG"),
   gr_ps = c("PS"),
   gr_pi = c("PI"),
+  
   gr_lpc = c("LPC"),
   gr_lpe = c("LPE"),
   gr_lpg = c("LPG"),
@@ -7254,37 +7393,39 @@ lipids_groups <- list(
 )
 
 # Full names, height, width of output file, legend display (TRUE or FALSE), col or row title, output print
+hedAdditionalHeigt <- 0.1
 lipids_groups_full_names <- list(
-  gr_tag_ac = c("Triacylglycerol", .7, 6, FALSE, "row_title"),
-  gr_1_2_dg = c("1,2-diacylglycerol", .85, 6, TRUE,"row_title"),
-  gr_1_3_dg = c("1,3-diacylglycerol", .85, 6, FALSE, "row_title"),
-  gr_ac = c("Acylcarnitine", 0.7, 2.5, FALSE, "row_title"),
+  gr_tag_ac = c("Triacylglycerol", .7+hedAdditionalHeigt, 6, FALSE, "row_title"),
+  gr_1_2_dg = c("1,2-diacylglycerol", .85+hedAdditionalHeigt, 6, TRUE,"row_title"),
+  gr_1_3_dg = c("1,3-diacylglycerol", .85+hedAdditionalHeigt, 6, FALSE, "row_title"),
+  gr_ac = c("Acylcarnitine", 0.7+hedAdditionalHeigt, 2.5, FALSE, "row_title"),
   
-  gr_cer = c("Ceramide", .9, 3, FALSE, "row_title"),
-  gr_cer_ratio = c("Ceramide ratio", 1, 3, TRUE, "row_title"),
-  gr_dhcer = c("Dihydroceramide", .9, 3, TRUE,"row_title"),
+  gr_cer = c("Ceramide", .9+hedAdditionalHeigt, 3, FALSE, "row_title"),
+  gr_cer_ratio = c("Ceramide ratio", 1+hedAdditionalHeigt, 3, TRUE, "row_title"),
+  gr_dhcer = c("Dihydroceramide", .9+hedAdditionalHeigt, 3, TRUE,"row_title"),
   
-  gr_glucer = c("Glucosylceramide", .9, 2, FALSE, "row_title"),
-  gr_laccer = c("Lactosylceramide", .9, 2, FALSE, "row_title"),
-  gr_sph = c("Sphingosine", .9, 2, FALSE, "row_title"),
-  gr_spm = c("Sphingomyelin", .9, 2, FALSE, "row_title"),
-  
-  
-  gr_pc = c("Phosphatidylcholine", 1.05, 6, TRUE,"row_title"),
-  gr_pe = c("Phosphatidylethanolamine", 1.12, 6, FALSE,"row_title"),
-  gr_pc_pe = c("Phosphatidylcholine.Phosphatidylethanolamine", 1, 6, FALSE,"row_title"),
-  
-  gr_pa = c("Phosphatidic acid", .9, 3, FALSE,"row_title"),
-  gr_pg = c("Phosphatidylglycerol", .9, 3, FALSE,"row_title"),
-  gr_ps = c("Phosphatidylserine", .9, 3, FALSE,"row_title"),
-  gr_pi = c("Phosphatidylinositol", .9, 3, FALSE,"row_title"),
+  gr_glucer = c("Glucosylceramide", .9+hedAdditionalHeigt, 2, FALSE, "row_title"),
+  gr_laccer = c("Lactosylceramide", .9+hedAdditionalHeigt, 2, FALSE, "row_title"),
+  gr_sph = c("Sphingosine", .9+hedAdditionalHeigt, 2, FALSE, "row_title"),
+  gr_spm = c("Sphingomyelin", .9+hedAdditionalHeigt, 2, FALSE, "row_title"),
   
   
-  gr_lpc = c("Lysophosphatidylcholine", 1, 1.5, FALSE,"col_title"),
-  gr_lpe = c("Lysophosphatidylethanolamine", 1, 3, TRUE,"col_title"),
-  gr_lpg = c("Lysophosphatidylglycerol", 1, 1.5, FALSE,"col_title"),
-  gr_lpi = c("Lysophosphatidylinositol", 1, 1.5, FALSE,"col_title"),
-  gr_lps = c("Lysophosphatidylserine", 1, 1.5, FALSE,"col_title")
+  gr_pc = c("Phosphatidylcholine", 1.05+hedAdditionalHeigt, 6, TRUE,"row_title"),
+  gr_pe = c("Phosphatidylethanolamine", 1.12+hedAdditionalHeigt, 6, FALSE,"row_title"),
+  gr_pc_pe = c("Phosphatidylcholine.Phosphatidylethanolamine", 1+hedAdditionalHeigt, 6, FALSE,"row_title"),
+  gr_lpc_pe = c("Lysophosphatidylcholine.Phosphatidylcholine", 1+hedAdditionalHeigt, 6, FALSE,"row_title"),
+  
+  gr_pa = c("Phosphatidic acid", .9+hedAdditionalHeigt, 3, FALSE,"row_title"),
+  gr_pg = c("Phosphatidylglycerol", .9+hedAdditionalHeigt, 3, FALSE,"row_title"),
+  gr_ps = c("Phosphatidylserine", .9+hedAdditionalHeigt, 3, FALSE,"row_title"),
+  gr_pi = c("Phosphatidylinositol", .9+hedAdditionalHeigt, 3, FALSE,"row_title"),
+  
+  
+  gr_lpc = c("Lysophosphatidylcholine", 1+hedAdditionalHeigt, 1.5, FALSE,"col_title"),
+  gr_lpe = c("Lysophosphatidylethanolamine", 1+hedAdditionalHeigt, 3, TRUE,"col_title"),
+  gr_lpg = c("Lysophosphatidylglycerol", 1+hedAdditionalHeigt, 1.5, FALSE,"col_title"),
+  gr_lpi = c("Lysophosphatidylinositol", 1+hedAdditionalHeigt, 1.5, FALSE,"col_title"),
+  gr_lps = c("Lysophosphatidylserine", 1+hedAdditionalHeigt, 1.5, FALSE,"col_title")
 )
 
 
@@ -7316,7 +7457,18 @@ pvals_gr_list <- lapply(lipids_groups, filter_lipid_group_row, data_frame = pval
 # estimates
 estimates_gr_list <- lapply(lipids_groups, filter_lipid_group_row, data_frame = estimates_df_heatMap)
 
-# Convert all dataframes to matrices
+# Rename first row to Total
+estimates_gr_list <- lapply(estimates_gr_list, function(df) {
+  rownames(df)[1] <- "Total"
+  df
+})
+
+pvals_gr_list <- lapply(pvals_gr_list, function(df) {
+  rownames(df)[1] <- "Total"
+  df
+})
+
+# Convert all data frames to matrices
 matrices_pvals <- lapply(pvals_gr_list, function(x) as.matrix(x))
 matrices_estimates <- lapply(estimates_gr_list, function(x) as.matrix(x))
 
@@ -7324,62 +7476,118 @@ matrices_estimates <- lapply(estimates_gr_list, function(x) as.matrix(x))
 matrices_estimates[["gr_cer"]] <- matrices_estimates[["gr_cer"]] [rownames(matrices_estimates[["gr_cer"]] ) != "Cer ratio_16:0 24:0", ]
 matrices_pvals[["gr_cer"]] <- matrices_pvals[["gr_cer"]] [rownames(matrices_pvals[["gr_cer"]] ) != "Cer ratio_16:0 24:0", ]
 
-generate_heatmap <- function(hm_matrix, p_val_matrix, colorMap, pLims, hm_title, hm_unit) {
-  
-    # Remove class name from matrix to only show composition
-  colnames(hm_matrix) <- sub(".*?_", "", colnames(hm_matrix))
-  
-  Heatmap(hm_matrix,
-          name = hm_unit, # Sets the name of the color scale
-          
-          col = colorMap, # Use provided color map
-          rect_gp = gpar(col = "white", lwd = 0.5), # Make space between each square
-          row_names_side = "left", # Position of row labels
-          row_names_gp = gpar(fontsize = 5), # Change font size of row labels
-          row_names_rot = 0,
-          
-          #column_split = rep(1:(ncol(hm_matrix) / 3), each = 3), # Splits the columns and names them
-          column_title = hm_title,
-          column_names_rot = 90, # Rotate column names for better readability
-          column_names_gp = gpar(fontsize = 5),
-          column_title_side = "top", # Placement of the column titles
-          column_title_gp = gpar(fontsize = 5.5, fontface = "bold"),
-          
-          
-          heatmap_legend_param = list(
-            title = "Percent",   # Legend title
-            direction = "vertical",  # Set legend labels vertically
-            title_gp = gpar(fontsize = 6, fontface = "bold"),   # Adjust title font size
-            labels_gp = gpar(fontsize = 5),  # Adjust label font size
-            color_key_height = unit(0.3, "cm"),  # Adjust the color key height
-            color_key_width = unit(.8, "cm"),     # Adjust the color key width
-            legend_width = unit(2, "cm"),        # Adjust the width of the legend box
-            legend_height = unit(1.4, "cm"),      # Adjust the height of the legend box
-            title_position = "topcenter"        # Move the title to the top center of the legend
-          ),
-          show_heatmap_legend = lipids_groups_full_names[[i]][4],
-          
-          # column_title = NULL, # Removes titles for split (could be adjusted to represent test)
-          
-          border = TRUE, # Set border around the splits
-          cluster_rows = FALSE, # Don't make clusters
-          cluster_columns = FALSE, # Don't make clusters
-          
-          cell_fun = function(j, i, x, y, width, height, fill) {
-            
-            if (is.na(hm_matrix[i, j])) {
-  grid.rect(unit(x, "npc"), unit(y, "npc"), width, height, gp = gpar(fill = "grey", col = NA))
-} else if (!is.na(p_val_matrix[i, j])) {
-  if (p_val_matrix[i, j] < pLims$p1) {
-    grid.text("***", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 6, fontface = "bold", lineheight = 0.35), just = "center")
-  } else if (p_val_matrix[i, j] < pLims$p2) {
-    grid.text("**", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 6, fontface = "bold", lineheight = 0.35), just = "center")
-  } else if (p_val_matrix[i, j] < pLims$p3) {
-    grid.text("*", unit(x, "npc"), unit(y, "npc") - unit(0.06, "npc"), gp = gpar(col = "black", fontsize = 6, fontface = "bold", lineheight = 0.35), just = "center")
-                  }
-            }
-          })
+
+
+
+
+
+library(ComplexHeatmap)
+library(grid)
+
+generate_heatmap <- function(hm_matrix,
+                             p_val_matrix,
+                             colorMap,
+                             pLims,
+                             hm_title,            # still here so your calls don’t break
+                             hm_unit,
+                             rowSeperatorLine = NULL) {
+
+  # 1) clean up column names
+  colnames(hm_matrix)    <- sub(".*?_", "", colnames(hm_matrix))
+  colnames(p_val_matrix) <- colnames(hm_matrix)
+
+  # 2) capture original names
+  orig_cn <- colnames(hm_matrix)
+  n_cols  <- length(orig_cn)
+
+  # 3) build per-column gp:
+  base_fs <- 5              # your original font size
+  fs_vec  <- c(base_fs * 1.3, rep(base_fs, n_cols - 1))
+  face_vec<- c("bold",     rep("plain", n_cols - 1))
+
+  # 4) heatmap
+  Heatmap(
+    hm_matrix,
+    name            = hm_unit,
+    col             = colorMap,
+
+    # grid & border
+    rect_gp         = gpar(col = "white", lwd = 0.5),
+    border          = TRUE,
+    border_gp       = gpar(col = "black", lwd = 1),
+
+    cluster_rows      = FALSE,
+    cluster_columns   = FALSE,
+
+    # row names unchanged
+    row_names_side  = "left",
+    row_names_gp    = gpar(fontsize = 5),
+    row_names_rot   = 0,
+
+    # ── here’s the per-column styling ───────────────────────────
+    column_labels     = orig_cn,       
+    column_names_rot  = 90,
+    column_names_gp   = gpar(fontsize = fs_vec,
+                             fontface = face_vec),
+
+    # legend
+    heatmap_legend_param = list(
+      title            = "Percent",
+      direction        = "vertical",
+      title_gp         = gpar(fontsize = 6, fontface = "bold"),
+      labels_gp        = gpar(fontsize = 5),
+      color_key_height = unit(0.3, "cm"),
+      color_key_width  = unit(0.8, "cm"),
+      legend_width     = unit(2,   "cm"),
+      legend_height    = unit(1.4, "cm"),
+      title_position   = "topcenter"
+    ),
+    show_heatmap_legend = lipids_groups_full_names[[i]][4],
+
+    cell_fun = function(j, i, x, y, width, height, fill) {
+      # NAs
+      if (is.na(hm_matrix[i, j])) {
+        grid.rect(unit(x, "npc"), unit(y, "npc"),
+                  width, height,
+                  gp = gpar(fill = "grey", col = NA))
+      # p-value stars
+      } else if (!is.na(p_val_matrix[i, j])) {
+        stars <- NULL
+        if      (p_val_matrix[i, j] < pLims$p1) stars <- "***"
+        else if (p_val_matrix[i, j] < pLims$p2) stars <- "**"
+        else if (p_val_matrix[i, j] < pLims$p3) stars <- "*"
+        if (!is.null(stars)) {
+          grid.text(stars,
+                    unit(x, "npc"), unit(y, "npc") - unit(0.07, "npc"),
+                    gp = gpar(col = "black", fontsize = 6),
+                    just = "center")
+        }
+      }
+      # horizontal separatorline
+      if (!is.null(rowSeperatorLine) && i == rowSeperatorLine) {
+        grid.lines(x = c(x - width/2, x + width/2),
+                   y = c(y - height/2, y - height/2),
+                   gp = gpar(col = "black", lwd = 0.5))
+      }
+      # vertical gap line after col1
+      if (j == 1) {
+        grid.lines(
+          x = c(x + width/2, x + width/2),
+          y = c(y - height/2, y + height/2),
+          default.units = "npc",
+          gp = gpar(col = "black", lwd = 1)
+        )
+      }
+    }
+  )
 }
+
+
+
+
+
+
+
 
 # Define color map for heatmap
 color_mapping_common <- colorRamp2(c(-200, 0, 200), c("blue", "white", "red"))
@@ -7406,12 +7614,14 @@ for (i in 1:length(lipids_groups)){
                                hm_title = "", 
                                hm_unit = "Percent")
   
-  hm_pre_post <- generate_heatmap(t(matrices_estimates[[i]][,1:2, drop = FALSE]),
-                                  t(matrices_pvals[[i]][,1:2, drop = FALSE]),
+  hm_pre_post <- generate_heatmap(t(matrices_estimates[[i]][,c(1,2,4), drop = FALSE]),
+                                  t(matrices_pvals[[i]][,c(1,2,4), drop = FALSE]),
                                   color_mapping_common,
                                   p_value_limits,
                                   hm_title = "",
-                                  hm_unit = "Percent")
+                                  hm_unit = "Percent",
+                                  rowSeperatorLine = 2)
+  
   
   
   # Combine heatmaps vertically and draw
@@ -7431,7 +7641,6 @@ for (i in 1:length(lipids_groups)){
   # png(savelocation_png, width = width*300, height = height*300, res = 300) # dimensions in pixels
   pdf(savelocation_svg, width = width, height = height) # dimensions in inches
   
-  # Draw the combined heatmap with conditional titles
   # Draw the combined heatmap with conditional titles and adjusted spacing
   draw(hm_slope %v% hm_pre_post, 
        row_title = row_title,
